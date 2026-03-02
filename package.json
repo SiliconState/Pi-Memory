@@ -1,0 +1,75 @@
+{
+  "name": "@siliconstate/pi-memory",
+  "version": "2.1.1",
+  "description": "Durable memory for Pi agents (C + SQLite) with auto-compaction support",
+  "type": "module",
+  "license": "MIT",
+  "author": "SiliconState",
+  "homepage": "https://github.com/SiliconState/Pi-Memory",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SiliconState/Pi-Memory.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SiliconState/Pi-Memory/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "agent-memory",
+    "sqlite",
+    "compaction",
+    "extension"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "bin": {
+    "pi-memory": "./bin/pi-memory.js",
+    "pi-memory-setup": "./bin/pi-memory-setup.js",
+    "pi-memory-doctor": "./scripts/doctor.mjs"
+  },
+  "scripts": {
+    "setup": "node ./scripts/setup.mjs",
+    "doctor": "node ./scripts/doctor.mjs",
+    "postinstall": "node ./scripts/postinstall.mjs",
+    "test:smoke": "bash ./scripts/test-smoke.sh"
+  },
+  "files": [
+    "bin",
+    "docs",
+    "extensions",
+    "native",
+    "prompts",
+    "scripts",
+    "skills",
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-ai": { "optional": true },
+    "@mariozechner/pi-coding-agent": { "optional": true },
+    "@sinclair/typebox": { "optional": true }
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/pi-memory-compact.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
+  }
+}

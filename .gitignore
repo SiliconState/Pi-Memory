@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+*.log
+npm-debug.log*
+
+# native build artifacts
+native/pi-memory
+native/pi-memory-asan
+
+# local test files
+*.jsonl
+*.db
+*.db-shm
+*.db-wal
