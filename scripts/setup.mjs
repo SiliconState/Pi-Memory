@@ -47,8 +47,10 @@ if (result.status !== 0) {
   console.error("\nFailed to compile pi-memory.");
   console.error("Compiler command:", [cc, ...compileArgs].join(" "));
   if (details) console.error(details);
-  console.error("\nInstall build prerequisites (C compiler + sqlite3 dev headers) and retry:");
-  console.error("  npm run setup");
+  if (!quiet) {
+    console.error("\nInstall build prerequisites (C compiler + sqlite3 dev headers) and retry:");
+    console.error("  npm run setup");
+  }
   process.exit(result.status ?? 1);
 }
 
