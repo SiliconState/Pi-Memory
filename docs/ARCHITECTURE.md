@@ -1,9 +1,10 @@
 # Architecture
 
-Pi-Memory v2 is intentionally split into two layers:
+Pi-Memory v2 is intentionally split into three layers:
 
 1. **Core memory engine** (`native/pi-memory.c`)
 2. **Pi runtime integration** (`extensions/pi-memory-compact.ts`)
+3. **Project memory bridge** (`MEMORY.md` files synced from DB)
 
 ## Core (C + SQLite)
 
@@ -29,7 +30,7 @@ Primary tables:
 
 - `log decision|finding|lesson|entity`
 - `query` / `search` / `recent` / `projects`
-- `state` (phase, summary, next actions + rollups)
+- `state <project>` (phase, summary, next actions + rollups)
 - `sync` (`MEMORY.md` marker replacement)
 - `ingest-session` (Pi JSONL -> semantic memory)
 - `sessions` (ingested session index)
@@ -69,6 +70,21 @@ The packaged extension resolves pi-memory in this order:
 1. `PI_MEMORY_BIN` env var
 2. `~/.pi/memory/pi-memory`
 3. fallback command `pi-memory` in PATH
+
+## MEMORY.md bridge layer
+
+`MEMORY.md` files are not the source of truth (SQLite is), but they are the context bridge into new sessions.
+
+- Source of truth: `memory.db`
+- Projection: `pi-memory sync MEMORY.md`
+- Session continuity: Pi loads project files, so synced `MEMORY.md` carries curated memory into fresh sessions
+
+## Session JSONL vs pi-memory
+
+- Session JSONL: exhaustive transcript (high volume, noisy, forensic)
+- pi-memory DB: distilled, queryable semantic memory (high signal)
+
+They are complementary. Ingest converts relevant signal from JSONL into structured memory tables.
 
 ## Skill + Prompts
 

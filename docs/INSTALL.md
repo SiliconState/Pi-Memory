@@ -34,7 +34,7 @@ The installer script runs `pi install ...` and falls back to direct compile if n
 pi install npm:@siliconstate/pi-memory
 ```
 
-## Option D: npm global install
+## Option D: npm global install (after npm publish)
 
 ```bash
 npm i -g @siliconstate/pi-memory
@@ -42,7 +42,7 @@ pi-memory-setup
 pi-memory-doctor
 ```
 
-## Option E: bun global install
+## Option E: bun global install (after npm publish)
 
 ```bash
 bun add -g @siliconstate/pi-memory
@@ -89,6 +89,14 @@ export PI_MEMORY_BIN="$HOME/.pi/memory/pi-memory"
 ```
 
 ### Check health quickly
+
+Always works:
+
+```bash
+~/.pi/memory/pi-memory --version
+```
+
+If installed via npm/bun global, you can also run:
 
 ```bash
 pi-memory-doctor

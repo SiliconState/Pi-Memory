@@ -13,7 +13,7 @@ This guide is for agent authors/operators using Pi-Memory in Pi workflows.
 ## Minimal command set
 
 ```bash
-pi-memory state
+pi-memory state <project>
 pi-memory query --type decision --limit 10
 pi-memory search "<keyword>"
 pi-memory sync MEMORY.md --limit 15
@@ -42,6 +42,23 @@ pi-memory log finding "SDK exposes model_select event" \
 pi-memory log lesson "Compaction resumed without user intent" \
   --why "No intent capture before compact" \
   --fix "Store last non-command input and resume with it"
+```
+
+## Manual compaction control during session
+
+Inside Pi:
+
+```text
+/compact-threshold
+/compact-threshold 75%
+/compact-threshold reset
+/compact
+```
+
+Optionally record the decision in memory:
+
+```bash
+pi-memory state <project> --summary "Compaction threshold set to 75%"
 ```
 
 ## Session ingest workflow

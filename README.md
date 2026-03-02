@@ -21,6 +21,39 @@ That keeps startup fast, failure modes simple, and behavior predictable.
 
 ---
 
+## Three-layer memory model (C + TS + DB + markdown bridge)
+
+Pi-Memory is designed as a layered system where each layer has a different job:
+
+| Layer | Responsibility | Location |
+|---|---|---|
+| **1. Core memory engine (C + SQLite)** | Stores structured memory: decisions, findings, lessons, entities, sessions, project state | `~/.pi/memory/pi-memory` + `~/.pi/memory/memory.db` |
+| **2. Pi lifecycle extension (TypeScript)** | Hooks into compaction/session events, syncs memory, ingests sessions, resumes intent | `extensions/pi-memory-compact.ts` (installed by Pi package) |
+| **3. Project memory files (`MEMORY.md`)** | Human-readable, per-project snapshot used as context bridge across sessions | project root `MEMORY.md` with sync markers |
+
+Check current DB coverage at any time:
+
+```bash
+~/.pi/memory/pi-memory projects
+```
+
+---
+
+## Session JSONL vs pi-memory (complementary, not redundant)
+
+| Dimension | Session JSONL (`~/.pi/agent/sessions/...`) | pi-memory (`~/.pi/memory/memory.db`) |
+|---|---|---|
+| Purpose | Full forensic transcript of a session | Curated, queryable long-term memory |
+| Granularity | Every message/tool result (including noise) | Distilled signal (decision/finding/lesson/entity) |
+| Scope | Single session tree | Cross-session + cross-project |
+| Search | Raw JSONL grep/parsing | Built-in structured query/search |
+| Compaction continuity | Bound to session context rules | Explicitly synced into `MEMORY.md` and state tables |
+| Best use | Auditing/replay/debug | Fast recall + continuity + handoff |
+
+Think of it as **camera footage vs engineering notebook**: you want both.
+
+---
+
 ## Install
 
 ### One-command install (recommended)
@@ -53,7 +86,7 @@ Then verify:
 ~/.pi/memory/pi-memory --version
 ```
 
-### npm global
+### npm global (after npm publish)
 
 ```bash
 npm i -g @siliconstate/pi-memory
@@ -61,7 +94,7 @@ pi-memory-setup
 pi-memory-doctor
 ```
 
-### bun global
+### bun global (after npm publish)
 
 ```bash
 bun add -g @siliconstate/pi-memory
@@ -88,10 +121,31 @@ pi-memory log entity "SessionManager" --type concept --description "Pi session t
 # inspect
 pi-memory query --limit 20
 pi-memory search "compaction"
-pi-memory state
+pi-memory state <project>
 
 # sync docs
 pi-memory sync MEMORY.md --limit 15
+```
+
+---
+
+## Manual compaction controls (per active Pi session)
+
+Inside Pi, you can manually tune compaction behavior without changing code:
+
+```text
+/compact-threshold          # show current auto-compaction threshold
+/compact-threshold 75%      # set threshold for this session runtime
+/compact-threshold 0.7      # same as 70%
+/compact-threshold reset    # restore default (60%)
+/compact                    # trigger compaction now
+```
+
+If you want this change recorded in project memory for teammates/future sessions:
+
+```bash
+~/.pi/memory/pi-memory state <project> --summary "Compaction threshold set to 75%"
+~/.pi/memory/pi-memory sync MEMORY.md --project <project> --limit 15
 ```
 
 ---

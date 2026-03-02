@@ -22,7 +22,7 @@ This extension exists to preserve continuity around compaction and shutdown, whi
    - detects smaller context-window switch and triggers safety compaction if needed
 7. `session_shutdown`
    - `ingest-session`
-   - `state --summary ...`
+   - `state <project> --summary ...`
    - `sync MEMORY.md`
 
 ## Resilience behavior
@@ -30,6 +30,19 @@ This extension exists to preserve continuity around compaction and shutdown, whi
 - All pi-memory calls are best-effort (non-fatal on failure)
 - Compaction fallback rotates across configured models on quota/auth/provider issues
 - Includes timeout controls via env vars
+
+## Manual runtime compaction control
+
+In an active Pi session:
+
+```text
+/compact-threshold          # show current threshold
+/compact-threshold 75%      # set threshold
+/compact-threshold reset    # restore default
+/compact                    # force immediate compaction
+```
+
+The extension persists threshold changes into session custom entries and restores them on `session_start`.
 
 ## Key environment variables
 

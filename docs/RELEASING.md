@@ -29,5 +29,5 @@
 ## Post-release checks
 
 - `pi install npm:@siliconstate/pi-memory@X.Y.Z`
-- `pi-memory-doctor`
+- `~/.pi/memory/pi-memory --version`
 - verify extension hooks and ingest path in a real Pi session

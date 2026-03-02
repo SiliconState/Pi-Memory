@@ -27,6 +27,8 @@ When `--project` is omitted, the project is resolved in this order:
 
 **You almost never need to type `--project` when working inside a git repo.**
 
+> Note: `pi-memory state` is the exception — it requires an explicit `<project>` positional argument.
+
 ## Bootstrap a New Project
 
 ```bash
@@ -107,8 +109,7 @@ Entities use `UPSERT` — re-running the same name updates in-place.
 
 ```bash
 # Current project state (shows session rollup stats)
-pi-memory state                         # auto-detected project
-pi-memory state my-project              # explicit
+pi-memory state my-project
 
 # Update state
 pi-memory state my-project \
@@ -274,7 +275,7 @@ The extension automatically passes `--session-id` on all `pi-memory log` calls.
 pi-memory projects
 
 # 2. Check current state (includes session stats)
-pi-memory state
+pi-memory state my-project
 
 # 3. See recent decisions
 pi-memory query --type decision --limit 10
@@ -290,7 +291,7 @@ pi-memory sync MEMORY.md 2>/dev/null || true
 pi-memory log decision "..." --choice "..." --rationale "..."
 
 # 2. Update project state
-pi-memory state --phase "..." --summary "..." --next "task1|task2"
+pi-memory state my-project --phase "..." --summary "..." --next "task1|task2"
 
 # 3. Sync MEMORY.md
 pi-memory sync MEMORY.md
@@ -318,6 +319,6 @@ If you modify `~/.pi/memory/pi-memory.c`:
 
 ```bash
 cd ~/.pi/memory
-cc -O2 -Wall -Wextra -o /usr/local/bin/pi-memory pi-memory.c -lsqlite3
-pi-memory help
+cc -O2 -Wall -Wextra -o ~/.pi/memory/pi-memory pi-memory.c -lsqlite3
+~/.pi/memory/pi-memory help
 ```
