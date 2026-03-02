@@ -74,57 +74,39 @@ This installs all Pi components declared in `package.json`:
 curl -fsSL https://raw.githubusercontent.com/SiliconState/Pi-Memory/main/scripts/install.sh | bash
 ```
 
-### npm package (after publish)
-
-```bash
-pi install npm:@siliconstate/pi-memory
-```
-
 Then verify:
 
 ```bash
 ~/.pi/memory/pi-memory --version
 ```
 
-### npm global (after npm publish)
-
-```bash
-npm i -g @siliconstate/pi-memory
-pi-memory-setup
-pi-memory-doctor
-```
-
-### bun global (after npm publish)
-
-```bash
-bun add -g @siliconstate/pi-memory
-pi-memory-setup
-pi-memory-doctor
-```
-
-> If native compile is skipped during install, run `pi-memory-setup` manually.
+> If native compile is skipped during install, rerun the curl installer or follow manual compile troubleshooting in `docs/INSTALL.md`.
+>
+> npm/bun publish is planned but not currently live. For now, use the git install (or curl wrapper) above.
 
 ---
 
 ## Quick Start
 
 ```bash
+BIN="${PI_MEMORY_BIN:-$HOME/.pi/memory/pi-memory}"
+
 # initialize MEMORY.md markers
-pi-memory init
+"$BIN" init
 
 # log memory records
-pi-memory log decision "Use SQLite for memory" --choice "Single local DB" --rationale "Simple + durable"
-pi-memory log finding "Extension hooks run at session_shutdown" --category architecture --confidence verified
-pi-memory log lesson "Forgot to sync MEMORY.md" --fix "Run sync before compaction"
-pi-memory log entity "SessionManager" --type concept --description "Pi session tree manager"
+"$BIN" log decision "Use SQLite for memory" --choice "Single local DB" --rationale "Simple + durable"
+"$BIN" log finding "Extension hooks run at session_shutdown" --category architecture --confidence verified
+"$BIN" log lesson "Forgot to sync MEMORY.md" --fix "Run sync before compaction"
+"$BIN" log entity "SessionManager" --type concept --description "Pi session tree manager"
 
 # inspect
-pi-memory query --limit 20
-pi-memory search "compaction"
-pi-memory state <project>
+"$BIN" query --limit 20
+"$BIN" search "compaction"
+"$BIN" state <project>
 
 # sync docs
-pi-memory sync MEMORY.md --limit 15
+"$BIN" sync MEMORY.md --limit 15
 ```
 
 ---

@@ -28,27 +28,11 @@ curl -fsSL https://raw.githubusercontent.com/SiliconState/Pi-Memory/main/scripts
 
 The installer script runs `pi install ...` and falls back to direct compile if needed.
 
-## Option C: Pi CLI install from npm (after publish)
+## npm/bun status
 
-```bash
-pi install npm:@siliconstate/pi-memory
-```
+npm/bun publish is planned but not currently live.
 
-## Option D: npm global install (after npm publish)
-
-```bash
-npm i -g @siliconstate/pi-memory
-pi-memory-setup
-pi-memory-doctor
-```
-
-## Option E: bun global install (after npm publish)
-
-```bash
-bun add -g @siliconstate/pi-memory
-pi-memory-setup
-pi-memory-doctor
-```
+Use Option A (`pi install git:...`) or Option B (curl installer) for now.
 
 ## Native build output
 
@@ -74,10 +58,21 @@ export PI_MEMORY_BIN=/custom/path/pi-memory
 
 ### `Failed to compile pi-memory`
 
-Install build prerequisites and rerun:
+Install build prerequisites and rerun the installer:
 
 ```bash
-pi-memory-setup
+pi install git:github.com/SiliconState/Pi-Memory
+```
+
+If needed, compile manually:
+
+```bash
+CC_BIN="${CC:-cc}"
+SRC="$HOME/.pi/agent/git/github.com/SiliconState/Pi-Memory/native/pi-memory.c"
+[ -f "$SRC" ] || SRC="$HOME/.pi/git/github.com/SiliconState/Pi-Memory/native/pi-memory.c"
+mkdir -p "$HOME/.pi/memory"
+"$CC_BIN" -Wall -Wextra -Wpedantic -O2 -std=c11 -o "$HOME/.pi/memory/pi-memory" "$SRC" -lsqlite3
+chmod +x "$HOME/.pi/memory/pi-memory"
 ```
 
 ### Extension can’t find binary
@@ -90,14 +85,7 @@ export PI_MEMORY_BIN="$HOME/.pi/memory/pi-memory"
 
 ### Check health quickly
 
-Always works:
-
 ```bash
 ~/.pi/memory/pi-memory --version
-```
-
-If installed via npm/bun global, you can also run:
-
-```bash
-pi-memory-doctor
+~/.pi/memory/pi-memory help
 ```

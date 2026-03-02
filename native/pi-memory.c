@@ -50,7 +50,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define VERSION       "2.1.0"
+#define VERSION       "2.1.1"
 #define MAX_PATH      1024
 #define MAX_BUF       8192
 #define MAX_JSON_VAL  65536

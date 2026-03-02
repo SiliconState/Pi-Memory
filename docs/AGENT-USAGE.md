@@ -2,6 +2,8 @@
 
 This guide is for agent authors/operators using Pi-Memory in Pi workflows.
 
+If `pi-memory` is not on PATH in your environment, call it explicitly as `~/.pi/memory/pi-memory`.
+
 ## Core operating rules
 
 1. Log decisions when choices are made, not after the session ends.
