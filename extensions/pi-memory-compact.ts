@@ -574,16 +574,12 @@ export default function (pi: ExtensionAPI) {
 
     const project = getProjectKey(ctx.cwd);
     try {
-      await pi.exec(
-        "pi-memory",
-        [
-          "state",
-          project,
-          "--summary",
-          `Auto-compacting at ${Math.round(ratio * 100)}% context usage`,
-        ],
-        { timeout: 5000 }
-      );
+      await execPiMemory(pi, [
+        "state",
+        project,
+        "--summary",
+        `Auto-compacting at ${Math.round(ratio * 100)}% context usage`,
+      ], { timeout: 5000 });
     } catch {
       // Non-fatal
     }

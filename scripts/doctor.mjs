@@ -49,7 +49,8 @@ for (const c of checks) {
 }
 
 if (failed.length) {
-  console.log("\nRun: pi-memory-setup");
+  console.log("\nRun: npm run setup");
+  console.log("from the pi-memory package directory (typically ~/.pi/agent/git/github.com/SiliconState/Pi-Memory).");
   process.exit(1);
 }
 

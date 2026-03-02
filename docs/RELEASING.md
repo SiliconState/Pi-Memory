@@ -21,13 +21,15 @@
    git tag vX.Y.Z
    git push origin main --tags
    ```
-5. Publish to npm:
+5. (When npm publishing is live) Publish to npm:
    ```bash
    npm publish --access public
    ```
 
+> npm/bun publish is planned but not currently live. For now, users install via `pi install git:github.com/SiliconState/Pi-Memory`.
+
 ## Post-release checks
 
-- `pi install npm:@siliconstate/pi-memory@X.Y.Z`
+- `pi install git:github.com/SiliconState/Pi-Memory` (primary install path)
 - `~/.pi/memory/pi-memory --version`
 - verify extension hooks and ingest path in a real Pi session

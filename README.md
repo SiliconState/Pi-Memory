@@ -1,5 +1,8 @@
 # Pi-Memory (v2)
 
+> **Pi extension** — requires the [Pi coding agent](https://github.com/badlogic/pi-mono) (`@mariozechner/pi-coding-agent`).
+> Install Pi first, then add Pi-Memory as a package.
+
 Durable memory for Pi agents, built for **low-overhead reliability**:
 - **C core** (`native/pi-memory.c`) for speed + minimal runtime surface
 - **TypeScript extension** (`extensions/pi-memory-compact.ts`) for Pi lifecycle automation
@@ -21,7 +24,7 @@ That keeps startup fast, failure modes simple, and behavior predictable.
 
 ---
 
-## Three-layer memory model (C + TS + DB + markdown bridge)
+## Three-layer memory model
 
 Pi-Memory is designed as a layered system where each layer has a different job:
 

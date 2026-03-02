@@ -11,11 +11,12 @@ Thanks for contributing to Pi-Memory.
 ## Local dev
 
 ```bash
-npm install
 npm run setup
 npm run doctor
 npm run test:smoke
 ```
+
+> There are no npm dependencies to install — the core is compiled C and the extension runs inside Pi's runtime. `npm run setup` compiles the native binary.
 
 ## Repo structure
 

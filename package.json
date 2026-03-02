@@ -53,13 +53,11 @@
   ],
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
+    "@mariozechner/pi-coding-agent": "*"
   },
   "peerDependenciesMeta": {
     "@mariozechner/pi-ai": { "optional": true },
-    "@mariozechner/pi-coding-agent": { "optional": true },
-    "@sinclair/typebox": { "optional": true }
+    "@mariozechner/pi-coding-agent": { "optional": true }
   },
   "pi": {
     "extensions": [

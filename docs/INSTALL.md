@@ -1,10 +1,15 @@
 # Install Guide
 
+## Platform support
+
+- **macOS** and **Linux** are supported.
+- **Windows** is not currently supported (no native build target).
+
 ## Prerequisites
 
 - Pi installed (`pi` CLI)
 - C compiler (`cc`/`clang`/`gcc`)
-- SQLite development headers (`sqlite3` + `libsqlite3-dev` on Linux)
+- SQLite development headers (`sqlite3` + `libsqlite3-dev` on Linux; included with Xcode CLI tools on macOS)
 
 ## Option A (recommended): single Pi command
 

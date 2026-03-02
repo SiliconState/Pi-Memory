@@ -9,7 +9,7 @@
  * Single binary. Works 6 months from now. Works 6 years from now.
  *
  * Build:   make
- * Install: make install   (copies to /usr/local/bin)
+ * Install: make install   (copies to ~/.pi/memory/pi-memory)
  *
  * Usage:
  *   pi-memory log decision <title> --choice <str> [--context <str>]
