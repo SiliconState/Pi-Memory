@@ -9,6 +9,7 @@
 - clarified three-layer memory model and JSONL-vs-memory positioning
 - added manual compaction controls documentation (`/compact-threshold`, `/compact`)
 - aligned binary version output with package version (`2.1.1`)
+- fixed Linux build portability (`optreset`/`getopt` reset handling + POSIX declarations)
 - improved packaged extension binary resolution order:
   1) `PI_MEMORY_BIN`
   2) `~/.pi/memory/pi-memory`

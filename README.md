@@ -52,6 +52,16 @@ Check current DB coverage at any time:
 
 Think of it as **camera footage vs engineering notebook**: you want both.
 
+### How JSONL is used automatically
+
+| Stage | Automatic action |
+|---|---|
+| Session runtime | Pi writes raw transcript JSONL (`~/.pi/agent/sessions/.../session.jsonl`) |
+| Session shutdown | extension calls `ingest-session` + updates `state` + runs `sync MEMORY.md` |
+| Next session | Pi loads project context files; synced `MEMORY.md` carries forward curated memory |
+
+Raw JSONL is not directly loaded as prompt context; extracted signal is.
+
 ---
 
 ## Install

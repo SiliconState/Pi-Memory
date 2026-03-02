@@ -86,6 +86,18 @@ The packaged extension resolves pi-memory in this order:
 
 They are complementary. Ingest converts relevant signal from JSONL into structured memory tables.
 
+## Automatic session transcript pipeline (what is actually “auto”)
+
+| Step | What happens automatically | Component |
+|---|---|---|
+| 1 | Pi runtime writes raw session transcript to `~/.pi/agent/sessions/.../session.jsonl` | Pi core |
+| 2 | On `session_shutdown`, extension runs `pi-memory ingest-session <session.jsonl> --project <project>` | `extensions/pi-memory-compact.ts` |
+| 3 | Ingest updates `sessions`, stores compaction summaries/findings, extracts decisions/lessons/entities, rolls up `project_state` | `native/pi-memory.c` |
+| 4 | Extension writes final state summary and runs `pi-memory sync MEMORY.md` | extension + C binary |
+| 5 | Next session starts with synced `MEMORY.md` available as project context | Pi context loading |
+
+Important distinction: raw JSONL is **not** injected directly as prompt context; curated memory derived from it is.
+
 ## Skill + Prompts
 
 - `skills/memory/SKILL.md`: operational policy and command usage for agents

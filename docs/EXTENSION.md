@@ -25,6 +25,8 @@ This extension exists to preserve continuity around compaction and shutdown, whi
    - `state <project> --summary ...`
    - `sync MEMORY.md`
 
+The shutdown hook reads the concrete session file path from `ctx.sessionManager.getSessionFile()` and ingests that JSONL file automatically.
+
 ## Resilience behavior
 
 - All pi-memory calls are best-effort (non-fatal on failure)

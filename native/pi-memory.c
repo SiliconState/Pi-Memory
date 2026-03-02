@@ -1,3 +1,7 @@
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 /*
  * pi-memory — durable agent memory store
  *
@@ -49,6 +53,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+extern int optreset;
+#endif
 
 #define VERSION       "2.1.1"
 #define MAX_PATH      1024
@@ -458,6 +466,20 @@ static const char *auto_project(void) {
     return buf;
 }
 
+/* getopt() keeps global state; reset before each subcommand parse. */
+static void reset_getopt_state(void) {
+#if defined(__GLIBC__)
+    /* glibc resets correctly when optind is set to 0. */
+    optind = 0;
+#else
+    optind = 1;
+#endif
+
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    optreset = 1;
+#endif
+}
+
 /* ─────────────────────────────────────────────────────────────────
    Print helpers
    ───────────────────────────────────────────────────────────────── */
@@ -545,7 +567,7 @@ static int cmd_log_decision(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "P:c:C:r:a:q:t:S:", opts, NULL)) != -1) {
         switch (opt) {
             case 'P': project      = optarg; break;
@@ -623,7 +645,7 @@ static int cmd_log_finding(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "P:s:g:d:t:S:", opts, NULL)) != -1) {
         switch (opt) {
             case 'P': project    = optarg; break;
@@ -686,7 +708,7 @@ static int cmd_log_lesson(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "P:w:f:t:S:", opts, NULL)) != -1) {
         switch (opt) {
             case 'P': project    = optarg; break;
@@ -746,7 +768,7 @@ static int cmd_log_entity(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "P:T:D:n:S:", opts, NULL)) != -1) {
         switch (opt) {
             case 'P': project     = optarg; break;
@@ -810,7 +832,7 @@ static int cmd_query(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "P:T:l:S:", opts, NULL)) != -1) {
         switch (opt) {
             case 'P': project = optarg;       break;
@@ -940,7 +962,7 @@ static int cmd_search(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "P:l:S:", opts, NULL)) != -1) {
         switch (opt) {
             case 'P': project = optarg;       break;
@@ -1219,7 +1241,7 @@ static int cmd_recent(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "n:", opts, NULL)) != -1) {
         if (opt == 'n') n = atoi(optarg);
     }
@@ -1285,7 +1307,7 @@ static int cmd_state(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "h:s:n:", opts, NULL)) != -1) {
         switch (opt) {
             case 'h': phase   = optarg; break;
@@ -1392,7 +1414,7 @@ static int cmd_export(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "P:F:", opts, NULL)) != -1) {
         switch (opt) {
             case 'P': project = optarg; break;
@@ -1417,7 +1439,8 @@ static int cmd_export(int argc, char *argv[]) {
         sqlite3_bind_text(stmt, 1, project, -1, SQLITE_STATIC);
         int first = 1;
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            if (!first) printf(","); first = 0;
+            if (!first) printf(",");
+            first = 0;
             json_str(col(stmt,2), esc, sizeof(esc));
             printf("{\"id\":%d,\"created_at\":\"%s\",\"title\":%s,",
                 sqlite3_column_int(stmt,0), col(stmt,1), esc);
@@ -1436,7 +1459,8 @@ static int cmd_export(int argc, char *argv[]) {
         sqlite3_bind_text(stmt, 1, project, -1, SQLITE_STATIC);
         first = 1;
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            if (!first) printf(","); first = 0;
+            if (!first) printf(",");
+            first = 0;
             json_str(col(stmt,4), esc, sizeof(esc));
             printf("{\"id\":%d,\"created_at\":\"%s\",\"confidence\":\"%s\",\"category\":\"%s\",\"content\":%s,",
                 sqlite3_column_int(stmt,0), col(stmt,1), col(stmt,5), col(stmt,3), esc);
@@ -1451,7 +1475,8 @@ static int cmd_export(int argc, char *argv[]) {
         sqlite3_bind_text(stmt, 1, project, -1, SQLITE_STATIC);
         first = 1;
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            if (!first) printf(","); first = 0;
+            if (!first) printf(",");
+            first = 0;
             json_str(col(stmt,2), esc, sizeof(esc));
             printf("{\"id\":%d,\"created_at\":\"%s\",\"what_failed\":%s",
                 sqlite3_column_int(stmt,0), col(stmt,1), esc);
@@ -1470,7 +1495,8 @@ static int cmd_export(int argc, char *argv[]) {
         sqlite3_bind_text(stmt, 1, project, -1, SQLITE_STATIC);
         first = 1;
         while (sqlite3_step(stmt) == SQLITE_ROW) {
-            if (!first) printf(","); first = 0;
+            if (!first) printf(",");
+            first = 0;
             json_str(col(stmt,2), esc, sizeof(esc));
             printf("{\"id\":%d,\"created_at\":\"%s\",\"name\":%s",
                 sqlite3_column_int(stmt,0), col(stmt,1), esc);
@@ -1736,7 +1762,7 @@ static int cmd_sync(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "P:l:", opts, NULL)) != -1) {
         switch (opt) {
             case 'P': project = optarg;       break;
@@ -1926,7 +1952,7 @@ static int cmd_init(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "f:", opts, NULL)) != -1) {
         if (opt == 'f') file = optarg;
     }
@@ -2319,7 +2345,7 @@ static int cmd_ingest_session(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "P:n", opts, NULL)) != -1) {
         switch (opt) {
             case 'P': project_override = optarg; break;
@@ -2370,7 +2396,6 @@ static int cmd_ingest_session(int argc, char *argv[]) {
     /* ── Compaction summaries to store ── */
     #define MAX_COMPACTIONS 128
     char *compaction_summaries[MAX_COMPACTIONS];
-    long  compaction_tokens_before[MAX_COMPACTIONS];
     int   comp_idx = 0;
 
     /* ── Parse line by line ── */
@@ -2496,9 +2521,6 @@ static int cmd_ingest_session(int argc, char *argv[]) {
                 if (summary) {
                     if (jx_str(line, "summary", summary, MAX_JSON_VAL) == 0) {
                         compaction_summaries[comp_idx] = summary;
-                        long tb = 0;
-                        jx_int(line, "tokensBefore", &tb);
-                        compaction_tokens_before[comp_idx] = tb;
                         comp_idx++;
                     } else {
                         free(summary);
@@ -2757,7 +2779,7 @@ static int cmd_sessions(int argc, char *argv[]) {
     };
 
     int opt;
-    optind = 1; optreset = 1;
+    reset_getopt_state();
     while ((opt = getopt_long(argc, argv, "P:l:", opts, NULL)) != -1) {
         switch (opt) {
             case 'P': project = optarg;       break;
