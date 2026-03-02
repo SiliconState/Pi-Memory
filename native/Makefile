@@ -1,4 +1,4 @@
-# pi-memory build
+# pi-memory build (bundled SQLite amalgamation — no system sqlite3 required)
 #
 # Build:   make
 # Install: make install   (installs to ~/.pi/memory/pi-memory)
@@ -6,13 +6,12 @@
 
 CC      = cc
 CFLAGS  = -Wall -Wextra -Wpedantic -O2 -std=c11
-LDFLAGS = -lsqlite3
 TARGET  = pi-memory
-SRC     = pi-memory.c
+SRC     = pi-memory.c sqlite3.c
 INSTALL_DIR = $(HOME)/.pi/memory
 
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LDFLAGS)
+$(TARGET): $(SRC) sqlite3.h
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) -lpthread -ldl -lm
 
 install: $(TARGET)
 	mkdir -p $(INSTALL_DIR)

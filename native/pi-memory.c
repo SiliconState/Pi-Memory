@@ -46,7 +46,7 @@
 #include <errno.h>
 #include <getopt.h>
 #include <pwd.h>
-#include <sqlite3.h>
+#include "sqlite3.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,7 +59,7 @@ extern int optreset;
 #endif
 
 #define VERSION       "2.1.1"
-#define MAX_PATH      1024
+#define MAX_PATH      2048
 #define MAX_BUF       8192
 #define MAX_JSON_VAL  65536
 #define MAX_LINE      (64 * 1024 * 1024)   /* 64MB max JSONL line */

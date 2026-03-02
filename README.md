@@ -93,6 +93,7 @@ Then verify:
 ~/.pi/memory/pi-memory --version
 ```
 
+> SQLite is bundled — the only build prerequisite is a C compiler (`cc`/`gcc`/`clang`).
 > If native compile is skipped during install, rerun the curl installer or follow manual compile troubleshooting in `docs/INSTALL.md`.
 >
 > npm/bun publish is planned but not currently live. For now, use the git install (or curl wrapper) above.

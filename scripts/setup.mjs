@@ -9,7 +9,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const quiet = process.argv.includes("--quiet");
 
-const source = path.join(root, "native", "pi-memory.c");
+const nativeDir = path.join(root, "native");
+const source = path.join(nativeDir, "pi-memory.c");
+const sqliteSource = path.join(nativeDir, "sqlite3.c");
 const outDir = path.join(os.homedir(), ".pi", "memory");
 const outBin = process.env.PI_MEMORY_BIN?.trim() || path.join(outDir, "pi-memory");
 const cc = process.env.CC || "cc";
@@ -27,6 +29,8 @@ function run(command, args) {
 
 mkdirSync(path.dirname(outBin), { recursive: true });
 
+// Bundled SQLite amalgamation — no system sqlite3-dev required.
+// Only needs: C compiler + pthreads + dl + math (standard on Linux/macOS).
 const compileArgs = [
   "-Wall",
   "-Wextra",
@@ -36,19 +40,29 @@ const compileArgs = [
   "-o",
   outBin,
   source,
-  "-lsqlite3",
+  sqliteSource,
+  "-lpthread",
+  "-ldl",
+  "-lm",
 ];
 
+// macOS doesn't need -ldl or -lpthread (included in system libs),
+// and passing them may warn. Use platform-appropriate flags.
+const platform = os.platform();
+const platformArgs = platform === "darwin"
+  ? ["-Wall", "-Wextra", "-Wpedantic", "-O2", "-std=c11", "-o", outBin, source, sqliteSource, "-lm"]
+  : compileArgs;
+
 log(`Compiling pi-memory -> ${outBin}`);
-const result = run(cc, compileArgs);
+const result = run(cc, platformArgs);
 
 if (result.status !== 0) {
   const details = [result.stdout, result.stderr].filter(Boolean).join("\n");
   console.error("\nFailed to compile pi-memory.");
-  console.error("Compiler command:", [cc, ...compileArgs].join(" "));
+  console.error("Compiler command:", [cc, ...platformArgs].join(" "));
   if (details) console.error(details);
   if (!quiet) {
-    console.error("\nInstall build prerequisites (C compiler + sqlite3 dev headers) and retry:");
+    console.error("\nInstall a C compiler and retry:");
     console.error("  npm run setup");
   }
   process.exit(result.status ?? 1);

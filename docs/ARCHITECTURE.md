@@ -38,6 +38,7 @@ Primary tables:
 
 ### Reliability choices
 
+- SQLite amalgamation bundled — no system `libsqlite3-dev` dependency
 - `sqlite3_busy_timeout` to reduce lock failures under concurrent writes
 - parameterized SQL statements for injection safety
 - idempotent session ingest

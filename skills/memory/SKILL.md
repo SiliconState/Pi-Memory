@@ -315,18 +315,15 @@ pi-memory sessions --project my-project
 
 ## Rebuild the Binary
 
-The C source lives in the installed package directory (not `~/.pi/memory/`). To rebuild:
-
-```bash
-# Find the installed source (typical location after pi install)
-SRC="$HOME/.pi/agent/git/github.com/SiliconState/Pi-Memory/native/pi-memory.c"
-
-cc -O2 -Wall -Wextra -o ~/.pi/memory/pi-memory "$SRC" -lsqlite3
-~/.pi/memory/pi-memory help
-```
-
-Or from the package directory:
+The C source and bundled SQLite amalgamation live in the installed package directory. To rebuild:
 
 ```bash
 cd ~/.pi/agent/git/github.com/SiliconState/Pi-Memory && npm run setup
+```
+
+Or compile directly:
+
+```bash
+PKG="$HOME/.pi/agent/git/github.com/SiliconState/Pi-Memory/native"
+cc -O2 -Wall -Wextra -o ~/.pi/memory/pi-memory "$PKG/pi-memory.c" "$PKG/sqlite3.c" -lpthread -ldl -lm
 ```

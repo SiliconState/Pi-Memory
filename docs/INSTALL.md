@@ -9,7 +9,8 @@
 
 - Pi installed (`pi` CLI)
 - C compiler (`cc`/`clang`/`gcc`)
-- SQLite development headers (`sqlite3` + `libsqlite3-dev` on Linux; included with Xcode CLI tools on macOS)
+
+> SQLite is bundled (amalgamation compiled directly into the binary). No system `libsqlite3-dev` or `sqlite3.h` needed.
 
 ## Option A (recommended): single Pi command
 
@@ -72,11 +73,11 @@ pi install git:github.com/SiliconState/Pi-Memory
 If needed, compile manually:
 
 ```bash
-CC_BIN="${CC:-cc}"
-SRC="$HOME/.pi/agent/git/github.com/SiliconState/Pi-Memory/native/pi-memory.c"
-[ -f "$SRC" ] || SRC="$HOME/.pi/git/github.com/SiliconState/Pi-Memory/native/pi-memory.c"
+PKG="$HOME/.pi/agent/git/github.com/SiliconState/Pi-Memory"
+[ -d "$PKG" ] || PKG="$HOME/.pi/git/github.com/SiliconState/Pi-Memory"
 mkdir -p "$HOME/.pi/memory"
-"$CC_BIN" -Wall -Wextra -Wpedantic -O2 -std=c11 -o "$HOME/.pi/memory/pi-memory" "$SRC" -lsqlite3
+cc -Wall -Wextra -Wpedantic -O2 -std=c11 -o "$HOME/.pi/memory/pi-memory" \
+  "$PKG/native/pi-memory.c" "$PKG/native/sqlite3.c" -lpthread -ldl -lm
 chmod +x "$HOME/.pi/memory/pi-memory"
 ```
 
