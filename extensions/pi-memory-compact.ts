@@ -13,6 +13,7 @@
 import { complete, type Model } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import os from "node:os";
 import path from "node:path";
 
 const DEFAULT_COMPACT_THRESHOLD = parseThresholdValue(process.env.PI_COMPACT_THRESHOLD, 0.6); // 60% default
@@ -82,7 +83,8 @@ async function execPiMemory(
   args: string[],
   options?: { timeout?: number; signal?: AbortSignal }
 ) {
-  const preferred = process.env.PI_MEMORY_BIN?.trim() || path.join(process.env.HOME ?? "", ".pi", "memory", "pi-memory");
+  const defaultBinary = process.platform === "win32" ? "pi-memory.exe" : "pi-memory";
+  const preferred = process.env.PI_MEMORY_BIN?.trim() || path.join(os.homedir(), ".pi", "memory", defaultBinary);
 
   if (preferred) {
     const result = await pi.exec(preferred, args, options);

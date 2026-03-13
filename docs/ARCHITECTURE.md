@@ -15,7 +15,8 @@ The C binary is the source of truth for persistence.
 SQLite database:
 
 ```text
-~/.pi/memory/memory.db
+~/.pi/memory/memory.db                    # macOS / Linux
+%USERPROFILE%\\.pi\\memory\\memory.db      # Windows
 ```
 
 Primary tables:
@@ -69,7 +70,7 @@ The extension automates operational memory hygiene around compaction and shutdow
 
 The packaged extension resolves pi-memory in this order:
 1. `PI_MEMORY_BIN` env var
-2. `~/.pi/memory/pi-memory`
+2. default binary in the user `.pi/memory` dir (`pi-memory` on Unix, `pi-memory.exe` on Windows)
 3. fallback command `pi-memory` in PATH
 
 ## MEMORY.md bridge layer

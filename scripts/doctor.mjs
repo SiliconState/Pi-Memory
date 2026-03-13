@@ -19,7 +19,8 @@ function check(name, fn) {
   }
 }
 
-const binary = process.env.PI_MEMORY_BIN?.trim() || path.join(os.homedir(), ".pi", "memory", "pi-memory");
+const defaultBinary = os.platform() === "win32" ? "pi-memory.exe" : "pi-memory";
+const binary = process.env.PI_MEMORY_BIN?.trim() || path.join(os.homedir(), ".pi", "memory", defaultBinary);
 
 check("native source present", () => {
   if (!existsSync(path.join(root, "native", "pi-memory.c"))) throw new Error("native/pi-memory.c missing");
@@ -35,7 +36,7 @@ check("skill present", () => {
 
 check("binary installed", () => {
   if (!existsSync(binary)) throw new Error(`missing binary: ${binary}`);
-  accessSync(binary, constants.X_OK);
+  if (os.platform() !== "win32") accessSync(binary, constants.X_OK);
 });
 
 check("binary runnable", () => {

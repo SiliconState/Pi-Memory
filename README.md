@@ -6,7 +6,7 @@
 Durable memory for Pi agents, built for **low-overhead reliability**:
 - **C core** (`native/pi-memory.c`) for speed + minimal runtime surface
 - **TypeScript extension** (`extensions/pi-memory-compact.ts`) for Pi lifecycle automation
-- **SQLite DB** (`~/.pi/memory/memory.db`) for single-file durability and simple ops
+- **SQLite DB** (`~/.pi/memory/memory.db` on Unix, `%USERPROFILE%\\.pi\\memory\\memory.db` on Windows) for single-file durability and simple ops
 
 Repository: https://github.com/SiliconState/Pi-Memory
 
@@ -18,7 +18,7 @@ Pi-Memory is intentionally small:
 - no server process
 - no external DB
 - no runtime framework dependency for core memory engine
-- one local DB: `~/.pi/memory/memory.db`
+- one local DB in your user `.pi/memory` directory
 
 That keeps startup fast, failure modes simple, and behavior predictable.
 
@@ -30,14 +30,14 @@ Pi-Memory is designed as a layered system where each layer has a different job:
 
 | Layer | Responsibility | Location |
 |---|---|---|
-| **1. Core memory engine (C + SQLite)** | Stores structured memory: decisions, findings, lessons, entities, sessions, project state | `~/.pi/memory/pi-memory` + `~/.pi/memory/memory.db` |
+| **1. Core memory engine (C + SQLite)** | Stores structured memory: decisions, findings, lessons, entities, sessions, project state | user `.pi/memory` dir (`pi-memory`/`pi-memory.exe` + `memory.db`) |
 | **2. Pi lifecycle extension (TypeScript)** | Hooks into compaction/session events, syncs memory, ingests sessions, resumes intent | `extensions/pi-memory-compact.ts` (installed by Pi package) |
 | **3. Project memory files (`MEMORY.md`)** | Human-readable, per-project snapshot used as context bridge across sessions | project root `MEMORY.md` with sync markers |
 
 Check current DB coverage at any time:
 
 ```bash
-~/.pi/memory/pi-memory projects
+pi-memory projects
 ```
 
 ---
@@ -81,7 +81,7 @@ This installs all Pi components declared in `package.json`:
 - prompts (`prompts/*.md`)
 - native C binary compile via postinstall
 
-### Alternative one-liner installer (curl)
+### Alternative one-liner installer (Unix only)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SiliconState/Pi-Memory/main/scripts/install.sh | bash
@@ -90,20 +90,23 @@ curl -fsSL https://raw.githubusercontent.com/SiliconState/Pi-Memory/main/scripts
 Then verify:
 
 ```bash
-~/.pi/memory/pi-memory --version
+pi-memory --version
 ```
 
-> SQLite is bundled — the only build prerequisite is a C compiler (`cc`/`gcc`/`clang`).
-> If native compile is skipped during install, rerun the curl installer or follow manual compile troubleshooting in `docs/INSTALL.md`.
+> SQLite is bundled — the only build prerequisite is a C compiler.
+> - Unix: `cc` / `gcc` / `clang`
+> - Windows: `clang`, `gcc`, or Visual Studio `cl`
 >
-> npm/bun publish is planned but not currently live. For now, use the git install (or curl wrapper) above.
+> If native compile is skipped during install, follow the manual compile troubleshooting in `docs/INSTALL.md`.
+>
+> npm/bun publish is planned but not currently live. For now, use the git install above.
 
 ---
 
 ## Quick Start
 
 ```bash
-BIN="${PI_MEMORY_BIN:-$HOME/.pi/memory/pi-memory}"
+BIN="${PI_MEMORY_BIN:-pi-memory}"
 
 # initialize MEMORY.md markers
 "$BIN" init
@@ -140,8 +143,8 @@ Inside Pi, you can manually tune compaction behavior without changing code:
 If you want this change recorded in project memory for teammates/future sessions:
 
 ```bash
-~/.pi/memory/pi-memory state <project> --summary "Compaction threshold set to 75%"
-~/.pi/memory/pi-memory sync MEMORY.md --project <project> --limit 15
+pi-memory state <project> --summary "Compaction threshold set to 75%"
+pi-memory sync MEMORY.md --project <project> --limit 15
 ```
 
 ---

@@ -2,7 +2,9 @@
 
 This guide is for agent authors/operators using Pi-Memory in Pi workflows.
 
-If `pi-memory` is not on PATH in your environment, call it explicitly as `~/.pi/memory/pi-memory`.
+If `pi-memory` is not on PATH in your environment, call the installed binary directly:
+- macOS / Linux: `~/.pi/memory/pi-memory`
+- Windows: `%USERPROFILE%\\.pi\\memory\\pi-memory.exe`
 
 ## Core operating rules
 

@@ -1,21 +1,23 @@
 ---
 name: memory
-description: Persist and retrieve project knowledge using pi-memory (SQLite at ~/.pi/memory/memory.db). Use when you need to log an architectural decision, record a finding or lesson, check what was decided before, sync a MEMORY.md file with live DB content, bootstrap memory for a new project, or ingest a Pi session file to extract metadata, decisions, lessons, and entities. Works across all projects — project is auto-detected from git remote or cwd. All log commands accept --session-id to cross-reference entries to Pi sessions.
+description: Persist and retrieve project knowledge using pi-memory (SQLite in your user `.pi/memory` directory). Use when you need to log an architectural decision, record a finding or lesson, check what was decided before, sync a MEMORY.md file with live DB content, bootstrap memory for a new project, or ingest a Pi session file to extract metadata, decisions, lessons, and entities. Works across all projects — project is auto-detected from git remote or cwd. All log commands accept --session-id to cross-reference entries to Pi sessions.
 ---
 
 # pi-memory v2.1 — Durable Agent Memory
 
-A single compiled binary (`~/.pi/memory/pi-memory`) backed by SQLite.
+A single compiled binary backed by SQLite.
 Works across every project. Survives context resets, compactions, and machine reboots.
 
 ## Binary Location
 
-```
-~/.pi/memory/pi-memory        (installed binary)
-~/.pi/memory/memory.db        (database)
+```text
+~/.pi/memory/pi-memory                    (installed binary on macOS / Linux)
+%USERPROFILE%\\.pi\\memory\\pi-memory.exe   (installed binary on Windows)
+~/.pi/memory/memory.db                   (database on macOS / Linux)
+%USERPROFILE%\\.pi\\memory\\memory.db       (database on Windows)
 ```
 
-If `pi-memory` is not in PATH, run `~/.pi/memory/pi-memory ...` directly.
+If `pi-memory` is not in PATH, run the installed binary directly.
 
 ## Project Auto-Detection
 
@@ -321,9 +323,11 @@ The C source and bundled SQLite amalgamation live in the installed package direc
 cd ~/.pi/agent/git/github.com/SiliconState/Pi-Memory && npm run setup
 ```
 
-Or compile directly:
+Or compile directly (Unix example):
 
 ```bash
 PKG="$HOME/.pi/agent/git/github.com/SiliconState/Pi-Memory/native"
-cc -O2 -Wall -Wextra -o ~/.pi/memory/pi-memory "$PKG/pi-memory.c" "$PKG/sqlite3.c" -lpthread -ldl -lm
+cc -O2 -Wall -Wextra -o ~/.pi/memory/pi-memory "$PKG/pi-memory.c" "$PKG/sqlite3.c" "$PKG/getopt_compat.c" -lpthread -ldl -lm
 ```
+
+On Windows, prefer `npm run setup`, which now supports `clang`, `gcc`, and Visual Studio `cl`.

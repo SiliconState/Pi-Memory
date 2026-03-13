@@ -7,7 +7,7 @@
 CC      = cc
 CFLAGS  = -Wall -Wextra -Wpedantic -O2 -std=c11
 TARGET  = pi-memory
-SRC     = pi-memory.c sqlite3.c
+SRC     = pi-memory.c sqlite3.c getopt_compat.c
 INSTALL_DIR = $(HOME)/.pi/memory
 
 $(TARGET): $(SRC) sqlite3.h

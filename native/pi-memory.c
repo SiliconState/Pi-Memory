@@ -1,5 +1,7 @@
+#ifndef _WIN32
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#endif
 #endif
 
 /*
@@ -9,7 +11,7 @@
  * Single binary. Works 6 months from now. Works 6 years from now.
  *
  * Build:   make
- * Install: make install   (copies to ~/.pi/memory/pi-memory)
+ * Install: make install   (copies to ~/.pi/memory/pi-memory[.exe])
  *
  * Usage:
  *   pi-memory log decision <title> --choice <str> [--context <str>]
@@ -44,17 +46,28 @@
 
 #include <ctype.h>
 #include <errno.h>
-#include <getopt.h>
-#include <pwd.h>
 #include "sqlite3.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
 
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <direct.h>
+#include <io.h>
+#include "getopt_compat.h"
+#define popen  _popen
+#define pclose _pclose
+#define getcwd _getcwd
+#else
+#include <getopt.h>
+#include <pwd.h>
+#include <unistd.h>
+#endif
+
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(_WIN32)
 extern int optreset;
 #endif
 
@@ -65,6 +78,14 @@ extern int optreset;
 #define MAX_LINE      (64 * 1024 * 1024)   /* 64MB max JSONL line */
 #define DEFAULT_LIMIT 20
 #define DEFAULT_N     10
+
+#ifdef _WIN32
+#define PATH_SEP_CH '\\'
+#define PATH_SEP_STR "\\"
+#else
+#define PATH_SEP_CH '/'
+#define PATH_SEP_STR "/"
+#endif
 
 /* ─────────────────────────────────────────────────────────────────
    Schema
@@ -150,35 +171,96 @@ static const char *SCHEMA =
    Utilities
    ───────────────────────────────────────────────────────────────── */
 
-static void get_memory_dir(char *out, size_t size) {
+static int is_path_sep(char c) {
+    return c == '/' || c == '\\';
+}
+
+static int path_mkdir(const char *path) {
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0755);
+#endif
+}
+
+static void normalize_path(char *path) {
+#ifdef _WIN32
+    for (char *p = path; *p; p++) {
+        if (*p == '/') *p = '\\';
+    }
+#else
+    (void)path;
+#endif
+}
+
+static const char *path_basename_ptr(const char *path) {
+    if (!path || !*path) return path;
+    const char *p = path + strlen(path);
+    while (p > path && is_path_sep(*(p - 1))) p--;
+    while (p > path && !is_path_sep(*(p - 1))) p--;
+    return p;
+}
+
+static void get_home_dir(char *out, size_t size) {
     const char *home = getenv("HOME");
-    if (!home) {
+#ifdef _WIN32
+    if (!home || !*home) home = getenv("USERPROFILE");
+    if ((!home || !*home)) {
+        const char *drive = getenv("HOMEDRIVE");
+        const char *path = getenv("HOMEPATH");
+        if (drive && *drive && path && *path) {
+            snprintf(out, size, "%s%s", drive, path);
+            normalize_path(out);
+            return;
+        }
+    }
+    if (!home || !*home) home = getenv("TEMP");
+    if (!home || !*home) home = ".";
+#else
+    if (!home || !*home) {
         struct passwd *pw = getpwuid(getuid());
         home = (pw && pw->pw_dir) ? pw->pw_dir : "/tmp";
     }
-    snprintf(out, size, "%s/.pi/memory", home);
+#endif
+    snprintf(out, size, "%s", home);
+    normalize_path(out);
+}
+
+static void get_memory_dir(char *out, size_t size) {
+    char home[MAX_PATH];
+    get_home_dir(home, sizeof(home));
+    snprintf(out, size, "%s%s.pi%smemory", home, PATH_SEP_STR, PATH_SEP_STR);
 }
 
 static void get_db_path(char *out, size_t size) {
     char dir[MAX_PATH];
     get_memory_dir(dir, sizeof(dir));
-    snprintf(out, size, "%s/memory.db", dir);
+    snprintf(out, size, "%s%smemory.db", dir, PATH_SEP_STR);
 }
 
 static int ensure_dir(const char *path) {
     char tmp[MAX_PATH];
     snprintf(tmp, sizeof(tmp), "%s", path);
-    size_t len = strlen(tmp);
-    if (len > 0 && tmp[len - 1] == '/') tmp[len - 1] = '\0';
+    normalize_path(tmp);
 
-    for (char *p = tmp + 1; *p; p++) {
-        if (*p == '/') {
+    size_t len = strlen(tmp);
+    if (len > 0 && is_path_sep(tmp[len - 1])) tmp[len - 1] = '\0';
+
+    char *start = tmp + 1;
+#ifdef _WIN32
+    if (isalpha((unsigned char)tmp[0]) && tmp[1] == ':' && is_path_sep(tmp[2])) {
+        start = tmp + 3;
+    }
+#endif
+
+    for (char *p = start; *p; p++) {
+        if (is_path_sep(*p)) {
             *p = '\0';
-            if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
-            *p = '/';
+            if (path_mkdir(tmp) != 0 && errno != EEXIST) return -1;
+            *p = PATH_SEP_CH;
         }
     }
-    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+    if (path_mkdir(tmp) != 0 && errno != EEXIST) return -1;
     return 0;
 }
 
@@ -400,9 +482,7 @@ static int jx_double_after(const char *line, const char *after_key, const char *
  */
 static void project_from_cwd(const char *cwd, char *out, size_t size) {
     if (!cwd || !*cwd) { snprintf(out, size, "global"); return; }
-    const char *p = cwd + strlen(cwd);
-    while (p > cwd && *(p - 1) != '/') p--;
-    snprintf(out, size, "%s", p);
+    snprintf(out, size, "%s", path_basename_ptr(cwd));
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -431,17 +511,21 @@ static const char *auto_project(void) {
     }
 
     /* 2. git remote origin */
+#ifdef _WIN32
+    FILE *fp = popen("git remote get-url origin 2>NUL", "r");
+#else
     FILE *fp = popen("git remote get-url origin 2>/dev/null", "r");
+#endif
     if (fp) {
         char raw[512] = {0};
         if (fgets(raw, sizeof(raw), fp) && raw[0]) {
             /* strip trailing newline / .git */
             size_t len = strlen(raw);
-            if (len > 0 && raw[len-1] == '\n') raw[--len] = '\0';
+            while (len > 0 && (raw[len - 1] == '\n' || raw[len - 1] == '\r')) raw[--len] = '\0';
             if (len > 4 && strcmp(raw + len - 4, ".git") == 0) raw[len-=4] = '\0';
-            /* take component after last '/' or ':' */
+            /* take component after last path separator or ':' */
             char *p = raw + len;
-            while (p > raw && *(p-1) != '/' && *(p-1) != ':') p--;
+            while (p > raw && !is_path_sep(*(p - 1)) && *(p - 1) != ':') p--;
             if (*p) {
                 snprintf(buf, sizeof(buf), "%s", p);
                 pclose(fp);
@@ -454,11 +538,8 @@ static const char *auto_project(void) {
     /* 3. basename of cwd */
     char cwd[MAX_PATH];
     if (getcwd(cwd, sizeof(cwd))) {
-        char *p = strrchr(cwd, '/');
-        if (p && *(p+1)) {
-            snprintf(buf, sizeof(buf), "%s", p+1);
-            return buf;
-        }
+        snprintf(buf, sizeof(buf), "%s", path_basename_ptr(cwd));
+        if (buf[0]) return buf;
     }
 
     /* 4. fallback */
@@ -1993,7 +2074,7 @@ static int cmd_init(int argc, char *argv[]) {
     fprintf(f,
 "# Memory — %s\n"
 "\n"
-"> Durable knowledge base for this project, backed by `pi-memory` (SQLite at `~/.pi/memory/memory.db`).\n"
+"> Durable knowledge base for this project, backed by `pi-memory` (SQLite in your user `.pi/memory` directory).\n"
 ">\n"
 "> **Refresh live sections:**\n"
 "> ```bash\n"
@@ -2844,7 +2925,7 @@ static int cmd_sessions(int argc, char *argv[]) {
 static void usage(void) {
     printf(
         "pi-memory v" VERSION "  —  durable agent memory store\n"
-        "  db:      ~/.pi/memory/memory.db\n"
+        "  db:      ~/.pi/memory/memory.db (Unix) | %%USERPROFILE%%\\.pi\\memory\\memory.db (Windows)\n"
         "  project: auto-detected from PI_MEMORY_PROJECT | git remote | cwd | 'global'\n\n"
         "  Commands:\n"
         "    init    [<project>] [--file <path>]   bootstrap MEMORY.md for any project\n"

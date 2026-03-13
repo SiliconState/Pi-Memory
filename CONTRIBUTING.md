@@ -37,7 +37,7 @@ npm run test:smoke
 ## PR checklist
 
 - [ ] No changes to unrelated files
-- [ ] Native build still succeeds (`-Wall -Wextra -Wpedantic`)
+- [ ] Native build still succeeds (`-Wall -Wextra -Wpedantic` on Unix, supported Windows compiler path still works)
 - [ ] `npm run test:smoke` passes
 - [ ] Docs updated
 - [ ] Backward compatibility considered
