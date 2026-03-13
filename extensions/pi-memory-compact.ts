@@ -13,6 +13,7 @@
 import { complete, type Model } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -75,6 +76,19 @@ function formatThresholdPercent(ratio: number): string {
 }
 
 function getProjectKey(cwd: string): string {
+  const pinned = process.env.PI_MEMORY_PROJECT?.trim();
+  if (pinned) return pinned;
+
+  try {
+    const memoryFile = path.join(cwd, "MEMORY.md");
+    if (existsSync(memoryFile)) {
+      const header = readFileSync(memoryFile, "utf8").match(/^#\s+Memory\s+[—-]\s+(.+)$/m)?.[1]?.trim();
+      if (header) return header;
+    }
+  } catch {
+    // Non-fatal; fall back to cwd basename.
+  }
+
   return path.basename(cwd);
 }
 

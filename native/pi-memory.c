@@ -2466,17 +2466,26 @@ static int cmd_ingest_session(int argc, char *argv[]) {
     int  line_num          = 0;
 
     /* ── Semantic extraction buckets ── */
-    AutoDecision decisions[MAX_AUTO_DECISIONS];
+    AutoDecision *decisions = calloc(MAX_AUTO_DECISIONS, sizeof(AutoDecision));
     int decision_count = 0;
-    AutoLesson lessons[MAX_AUTO_LESSONS];
+    AutoLesson *lessons = calloc(MAX_AUTO_LESSONS, sizeof(AutoLesson));
     int lesson_count = 0;
-    AutoEntity entities[MAX_AUTO_ENTITIES];
+    AutoEntity *entities = calloc(MAX_AUTO_ENTITIES, sizeof(AutoEntity));
     int entity_count = 0;
     char recent_error[600] = {0};
 
+    if (!decisions || !lessons || !entities) {
+        fprintf(stderr, "error: out of memory allocating ingest buffers\n");
+        free(decisions);
+        free(lessons);
+        free(entities);
+        fclose(f);
+        return 1;
+    }
+
     /* ── Compaction summaries to store ── */
     #define MAX_COMPACTIONS 128
-    char *compaction_summaries[MAX_COMPACTIONS];
+    char *compaction_summaries[MAX_COMPACTIONS] = {0};
     int   comp_idx = 0;
 
     /* ── Parse line by line ── */
@@ -2624,6 +2633,9 @@ static int cmd_ingest_session(int argc, char *argv[]) {
     if (!session_id[0]) {
         fprintf(stderr, "error: no session header found in '%s'\n", filepath);
         for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+        free(decisions);
+        free(lessons);
+        free(entities);
         return 1;
     }
 
@@ -2645,12 +2657,18 @@ static int cmd_ingest_session(int argc, char *argv[]) {
     if (dry_run) {
         printf("\n  [DRY RUN — nothing written]\n\n");
         for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+        free(decisions);
+        free(lessons);
+        free(entities);
         return 0;
     }
 
     sqlite3 *db = open_db();
     if (!db) {
         for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+        free(decisions);
+        free(lessons);
+        free(entities);
         return 1;
     }
 
@@ -2840,6 +2858,9 @@ static int cmd_ingest_session(int argc, char *argv[]) {
     sqlite3_close(db);
 
     for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+    free(decisions);
+    free(lessons);
+    free(entities);
 
     printf("\n  done.\n\n");
     return 0;
