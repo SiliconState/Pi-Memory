@@ -1,14 +1,11 @@
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 200809L
-#endif
-
 /*
  * pi-memory — durable agent memory store
  *
  * SQLite-backed CLI. No runtime deps beyond libsqlite3.
  * Single binary. Works 6 months from now. Works 6 years from now.
  *
- * Build:   make
+ * Build:   make           (Unix)
+ *          cl /O2 ...     (MSVC)
  * Install: make install   (copies to ~/.pi/memory/pi-memory)
  *
  * Usage:
@@ -33,6 +30,7 @@
  *   pi-memory state   <project> [--phase <str>] [--summary <str>] [--next <str>]
  *   pi-memory export  [--project <proj>] [--format md|json]
  *   pi-memory init    [<project>] [--file <path>]
+ *   pi-memory sync    <file> [--project <proj>] [--limit <n>]
  *   pi-memory projects
  *
  * Project auto-detection (used when --project is omitted):
@@ -40,25 +38,27 @@
  *   2. git remote get-url origin  →  repo name
  *   3. basename of current working directory
  *   4. "global"
+ *
+ * Platforms: macOS, Linux, Windows (MSVC, MinGW, Clang-CL)
  */
+
+/* compat.h provides cross-platform shims (getopt, mkdir, home dir, etc.) */
+#include "compat.h"
 
 #include <ctype.h>
 #include <errno.h>
-#include <getopt.h>
-#include <pwd.h>
 #include "sqlite3.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
 
+#if !defined(_WIN32)
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 extern int optreset;
 #endif
+#endif
 
-#define VERSION       "2.1.1"
+#define VERSION       "2.2.0"
 #define MAX_PATH      2048
 #define MAX_BUF       8192
 #define MAX_JSON_VAL  65536
@@ -151,11 +151,7 @@ static const char *SCHEMA =
    ───────────────────────────────────────────────────────────────── */
 
 static void get_memory_dir(char *out, size_t size) {
-    const char *home = getenv("HOME");
-    if (!home) {
-        struct passwd *pw = getpwuid(getuid());
-        home = (pw && pw->pw_dir) ? pw->pw_dir : "/tmp";
-    }
+    const char *home = pi_get_home();
     snprintf(out, size, "%s/.pi/memory", home);
 }
 
@@ -169,16 +165,18 @@ static int ensure_dir(const char *path) {
     char tmp[MAX_PATH];
     snprintf(tmp, sizeof(tmp), "%s", path);
     size_t len = strlen(tmp);
-    if (len > 0 && tmp[len - 1] == '/') tmp[len - 1] = '\0';
+    if (len > 0 && (tmp[len - 1] == '/' || tmp[len - 1] == '\\'))
+        tmp[len - 1] = '\0';
 
     for (char *p = tmp + 1; *p; p++) {
-        if (*p == '/') {
+        if (PI_IS_SEP(*p)) {
+            char saved = *p;
             *p = '\0';
-            if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
-            *p = '/';
+            if (pi_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+            *p = saved;
         }
     }
-    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+    if (pi_mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
     return 0;
 }
 
@@ -401,7 +399,7 @@ static int jx_double_after(const char *line, const char *after_key, const char *
 static void project_from_cwd(const char *cwd, char *out, size_t size) {
     if (!cwd || !*cwd) { snprintf(out, size, "global"); return; }
     const char *p = cwd + strlen(cwd);
-    while (p > cwd && *(p - 1) != '/') p--;
+    while (p > cwd && !PI_IS_SEP(*(p - 1))) p--;
     snprintf(out, size, "%s", p);
 }
 
@@ -431,7 +429,11 @@ static const char *auto_project(void) {
     }
 
     /* 2. git remote origin */
+#ifdef _WIN32
+    FILE *fp = popen("git remote get-url origin 2>NUL", "r");
+#else
     FILE *fp = popen("git remote get-url origin 2>/dev/null", "r");
+#endif
     if (fp) {
         char raw[512] = {0};
         if (fgets(raw, sizeof(raw), fp) && raw[0]) {
@@ -439,9 +441,9 @@ static const char *auto_project(void) {
             size_t len = strlen(raw);
             if (len > 0 && raw[len-1] == '\n') raw[--len] = '\0';
             if (len > 4 && strcmp(raw + len - 4, ".git") == 0) raw[len-=4] = '\0';
-            /* take component after last '/' or ':' */
+            /* take component after last '/', '\', or ':' */
             char *p = raw + len;
-            while (p > raw && *(p-1) != '/' && *(p-1) != ':') p--;
+            while (p > raw && *(p-1) != '/' && *(p-1) != '\\' && *(p-1) != ':') p--;
             if (*p) {
                 snprintf(buf, sizeof(buf), "%s", p);
                 pclose(fp);
@@ -454,9 +456,11 @@ static const char *auto_project(void) {
     /* 3. basename of cwd */
     char cwd[MAX_PATH];
     if (getcwd(cwd, sizeof(cwd))) {
-        char *p = strrchr(cwd, '/');
-        if (p && *(p+1)) {
-            snprintf(buf, sizeof(buf), "%s", p+1);
+        /* find last path separator (/ or \) */
+        char *p = cwd + strlen(cwd);
+        while (p > cwd && !PI_IS_SEP(*(p-1))) p--;
+        if (*p) {
+            snprintf(buf, sizeof(buf), "%s", p);
             return buf;
         }
     }
@@ -468,14 +472,17 @@ static const char *auto_project(void) {
 
 /* getopt() keeps global state; reset before each subcommand parse. */
 static void reset_getopt_state(void) {
-#if defined(__GLIBC__)
+#if defined(_WIN32)
+    /* Our bundled getopt resets correctly with optind=1 */
+    optind = 1;
+#elif defined(__GLIBC__)
     /* glibc resets correctly when optind is set to 0. */
     optind = 0;
 #else
     optind = 1;
 #endif
 
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#if !defined(_WIN32) && (defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__))
     optreset = 1;
 #endif
 }

@@ -1,0 +1,122 @@
+name: Build Prebuilt Binaries
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin-arm64
+            cc: clang
+            flags: "-Wall -Wextra -Wpedantic -O2 -std=c11"
+            libs: "-lm"
+            ext: ""
+
+          - os: macos-13
+            platform: darwin-x64
+            cc: clang
+            flags: "-Wall -Wextra -Wpedantic -O2 -std=c11"
+            libs: "-lm"
+            ext: ""
+
+          - os: ubuntu-latest
+            platform: linux-x64
+            cc: gcc
+            flags: "-Wall -Wextra -Wpedantic -O2 -std=c11"
+            libs: "-lpthread -ldl -lm"
+            ext: ""
+
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            cc: gcc
+            flags: "-Wall -Wextra -Wpedantic -O2 -std=c11"
+            libs: "-lpthread -ldl -lm"
+            ext: ""
+
+          - os: windows-latest
+            platform: win32-x64
+            ext: ".exe"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd native
+          ${{ matrix.cc }} ${{ matrix.flags }} -o pi-memory${{ matrix.ext }} pi-memory.c sqlite3.c ${{ matrix.libs }}
+          ./pi-memory --version
+
+      - name: Build (Windows MSVC)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          cd native
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /Fe:pi-memory.exe pi-memory.c sqlite3.c
+          pi-memory.exe --version
+
+      - name: Stage prebuilt
+        shell: bash
+        run: |
+          mkdir -p prebuilds/${{ matrix.platform }}
+          cp native/pi-memory${{ matrix.ext }} prebuilds/${{ matrix.platform }}/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-${{ matrix.platform }}
+          path: prebuilds/${{ matrix.platform }}/pi-memory${{ matrix.ext }}
+
+  # Collect all prebuilts and commit to the repo (or create a release)
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: prebuilds-dl
+
+      - name: Arrange prebuilds
+        run: |
+          mkdir -p prebuilds
+          for dir in prebuilds-dl/prebuilt-*; do
+            platform=$(basename "$dir" | sed 's/prebuilt-//')
+            mkdir -p "prebuilds/$platform"
+            cp "$dir"/* "prebuilds/$platform/"
+            chmod +x "prebuilds/$platform"/* 2>/dev/null || true
+          done
+          echo "Prebuilds:"
+          find prebuilds -type f | sort
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            prebuilds/darwin-arm64/pi-memory
+            prebuilds/darwin-x64/pi-memory
+            prebuilds/linux-x64/pi-memory
+            prebuilds/linux-arm64/pi-memory
+            prebuilds/win32-x64/pi-memory.exe
+          generate_release_notes: true
+
+      - name: Upload combined prebuilds
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-prebuilds
+          path: prebuilds/

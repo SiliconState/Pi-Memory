@@ -9,6 +9,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 
 const checks = [];
+const isWin = os.platform() === "win32";
+const ext = isWin ? ".exe" : "";
 
 function check(name, fn) {
   try {
@@ -19,10 +21,15 @@ function check(name, fn) {
   }
 }
 
-const binary = process.env.PI_MEMORY_BIN?.trim() || path.join(os.homedir(), ".pi", "memory", "pi-memory");
+const binary = process.env.PI_MEMORY_BIN?.trim() ||
+  path.join(os.homedir(), ".pi", "memory", `pi-memory${ext}`);
 
 check("native source present", () => {
   if (!existsSync(path.join(root, "native", "pi-memory.c"))) throw new Error("native/pi-memory.c missing");
+});
+
+check("compat header present", () => {
+  if (!existsSync(path.join(root, "native", "compat.h"))) throw new Error("native/compat.h missing");
 });
 
 check("extension present", () => {
@@ -33,13 +40,22 @@ check("skill present", () => {
   if (!existsSync(path.join(root, "skills", "memory", "SKILL.md"))) throw new Error("skills/memory/SKILL.md missing");
 });
 
+check("prebuilt available for this platform", () => {
+  const key = `${os.platform()}-${os.arch()}`;
+  const prebuilt = path.join(root, "prebuilds", key, `pi-memory${ext}`);
+  if (!existsSync(prebuilt)) {
+    console.log(`  ℹ  no prebuilt for ${key} — will compile from source`);
+    return; /* not fatal — source compilation is the fallback */
+  }
+});
+
 check("binary installed", () => {
   if (!existsSync(binary)) throw new Error(`missing binary: ${binary}`);
-  accessSync(binary, constants.X_OK);
+  if (!isWin) accessSync(binary, constants.X_OK);
 });
 
 check("binary runnable", () => {
-  const r = spawnSync(binary, ["--version"], { encoding: "utf8" });
+  const r = spawnSync(binary, ["--version"], { encoding: "utf8", timeout: 10000 });
   if (r.status !== 0) throw new Error(r.stderr?.trim() || `exit=${r.status}`);
 });
 

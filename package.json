@@ -1,7 +1,7 @@
 {
   "name": "@siliconstate/pi-memory",
-  "version": "2.1.1",
-  "description": "Durable memory for Pi agents (C + SQLite) with auto-compaction support",
+  "version": "2.2.0",
+  "description": "Durable memory for Pi agents — prebuilt binaries, zero compiler needed (C + SQLite)",
   "type": "module",
   "license": "MIT",
   "author": "SiliconState",
@@ -22,6 +22,11 @@
     "compaction",
     "extension"
   ],
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
   "engines": {
     "node": ">=18.17"
   },
@@ -34,13 +39,14 @@
     "setup": "node ./scripts/setup.mjs",
     "doctor": "node ./scripts/doctor.mjs",
     "postinstall": "node ./scripts/postinstall.mjs",
-    "test:smoke": "bash ./scripts/test-smoke.sh"
+    "test:smoke": "node ./scripts/test-smoke.mjs"
   },
   "files": [
     "bin",
     "docs",
     "extensions",
     "native",
+    "prebuilds",
     "prompts",
     "scripts",
     "skills",

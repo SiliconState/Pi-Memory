@@ -5,7 +5,13 @@ npm-debug.log*
 
 # native build artifacts
 native/pi-memory
+native/pi-memory.exe
 native/pi-memory-asan
+native/*.obj
+
+# prebuilt binaries (built by CI, committed for npm publish)
+# uncomment the next line to exclude from git (if using GitHub Releases instead)
+# prebuilds/
 
 # local test files
 *.jsonl

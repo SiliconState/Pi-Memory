@@ -7,6 +7,7 @@ Durable memory for Pi agents, built for **low-overhead reliability**:
 - **C core** (`native/pi-memory.c`) for speed + minimal runtime surface
 - **TypeScript extension** (`extensions/pi-memory-compact.ts`) for Pi lifecycle automation
 - **SQLite DB** (`~/.pi/memory/memory.db`) for single-file durability and simple ops
+- **Prebuilt binaries** — no C compiler needed on macOS, Linux, or Windows
 
 Repository: https://github.com/SiliconState/Pi-Memory
 
@@ -79,7 +80,19 @@ This installs all Pi components declared in `package.json`:
 - extension (`extensions/pi-memory-compact.ts`)
 - skill (`skills/memory/SKILL.md`)
 - prompts (`prompts/*.md`)
-- native C binary compile via postinstall
+- native binary (prebuilt for your platform — no compiler needed)
+
+### Platform support
+
+| Platform | Architecture | Prebuilt binary |
+|----------|-------------|----------------|
+| macOS    | arm64 (Apple Silicon) | ✅ |
+| macOS    | x64 (Intel) | ✅ |
+| Linux    | x64 | ✅ |
+| Linux    | arm64 | ✅ |
+| Windows  | x64 | ✅ |
+
+If no prebuilt matches your platform, install falls back to compiling from source (requires `cc`/`gcc`/`clang` or MSVC).
 
 ### Alternative one-liner installer (curl)
 
@@ -92,11 +105,6 @@ Then verify:
 ```bash
 ~/.pi/memory/pi-memory --version
 ```
-
-> SQLite is bundled — the only build prerequisite is a C compiler (`cc`/`gcc`/`clang`).
-> If native compile is skipped during install, rerun the curl installer or follow manual compile troubleshooting in `docs/INSTALL.md`.
->
-> npm/bun publish is planned but not currently live. For now, use the git install (or curl wrapper) above.
 
 ---
 
@@ -148,11 +156,13 @@ If you want this change recorded in project memory for teammates/future sessions
 
 ## What ships in this package
 
-- `native/pi-memory.c` — core C CLI (SQLite-backed)
+- `native/pi-memory.c` — core C CLI (SQLite-backed, cross-platform)
+- `native/compat.h` — POSIX/Windows compatibility layer
+- `prebuilds/` — prebuilt binaries for all supported platforms
 - `extensions/pi-memory-compact.ts` — Pi extension
 - `skills/memory/SKILL.md` — memory skill
 - `prompts/*.md` — reusable prompt templates
-- `scripts/setup.mjs` — native build/install helper
+- `scripts/setup.mjs` — install helper (prebuilt copy or source compile)
 
 ---
 
@@ -170,9 +180,27 @@ If you want this change recorded in project memory for teammates/future sessions
 ## Development
 
 ```bash
-npm run setup
-npm run doctor
-npm run test:smoke
+npm run setup       # install binary (prebuilt or compile)
+npm run doctor      # check all components
+npm run test:smoke  # run full smoke test
+```
+
+### Building from source
+
+**macOS/Linux:**
+```bash
+cd native && make
+```
+
+**Windows (MSVC — from Developer Command Prompt):**
+```cmd
+cd native
+nmake /F Makefile.win
+```
+
+**Windows (MinGW):**
+```bash
+cd native && gcc -O2 -std=c11 -o pi-memory.exe pi-memory.c sqlite3.c -lm
 ```
 
 ---

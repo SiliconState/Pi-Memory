@@ -1,13 +1,15 @@
 /**
  * Auto-sync pi-memory before compaction, trigger early compaction,
- * and use cross-provider model fallback for summarization.
+ * use cross-provider model fallback for summarization, and bridge
+ * final rate-limit failures to a backup model/provider.
  *
  * v2: Also stores compaction summaries as findings, passes session-id
  * to all pi-memory calls, and updates project state on session shutdown.
  *
  * This avoids hard failures when the active model/provider is out of quota
- * (e.g. 429 insufficient balance on one provider) by trying other available
- * providers with configured API keys.
+ * or rate-limited by trying configured backup providers before giving up.
+ * Provider failover is model-agnostic — it works with whatever models
+ * the user has configured and keyed, no hardcoded provider preferences.
  */
 
 import { complete, type Model } from "@mariozechner/pi-ai";
@@ -20,16 +22,11 @@ const THRESHOLD_ENTRY_TYPE = "memory-compact-threshold";
 const PROVIDER_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
 const COMPACTION_MODEL_TIMEOUT_MS = parsePositiveInt(process.env.PI_COMPACTION_MODEL_TIMEOUT_MS, 15000);
 const COMPACTION_WATCHDOG_MS = parsePositiveInt(process.env.PI_COMPACTION_WATCHDOG_MS, 60000);
-const MAX_MODEL_ATTEMPTS = parsePositiveInt(process.env.PI_COMPACTION_MAX_MODEL_ATTEMPTS, 3);
+const MAX_MODEL_ATTEMPTS = parsePositiveInt(process.env.PI_COMPACTION_MAX_MODEL_ATTEMPTS, 5);
 
 // Preferred compaction models (ordered). Only used if available + keyed.
-const DEFAULT_FALLBACK_MODELS = [
-  "openai-codex/gpt-5.3-codex",
-  "openai/gpt-5.2",
-  "anthropic/claude-sonnet-4-5",
-  "google/gemini-2.5-flash",
-  "openrouter/anthropic/claude-3.5-sonnet",
-];
+// Override with PI_COMPACTION_FALLBACK_MODELS env var (comma-separated).
+const DEFAULT_FALLBACK_MODELS: string[] = [];
 
 interface ResumableState {
   lastIntent: string | null;
@@ -49,6 +46,12 @@ interface ThresholdEntryData {
   threshold?: number;
   updatedAt?: number;
   source?: string;
+}
+
+interface AutoRetryEndEventLike {
+  success: boolean;
+  attempt: number;
+  finalError?: string;
 }
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -82,7 +85,11 @@ async function execPiMemory(
   args: string[],
   options?: { timeout?: number; signal?: AbortSignal }
 ) {
-  const preferred = process.env.PI_MEMORY_BIN?.trim() || path.join(process.env.HOME ?? "", ".pi", "memory", "pi-memory");
+  const preferred = process.env.PI_MEMORY_BIN?.trim() || path.join(
+    process.env.HOME ?? process.env.USERPROFILE ?? "",
+    ".pi", "memory",
+    process.platform === "win32" ? "pi-memory.exe" : "pi-memory"
+  );
 
   if (preferred) {
     const result = await pi.exec(preferred, args, options);
@@ -95,16 +102,51 @@ async function execPiMemory(
 function isQuotaError(message: string): boolean {
   const m = message.toLowerCase();
   return (
-    m.includes("429") &&
-    (
-      m.includes("insufficient") ||
-      m.includes("quota") ||
-      m.includes("balance") ||
-      m.includes("资源包") ||
-      m.includes("余额不足") ||
-      m.includes("请充值")
-    )
+    m.includes("429") ||
+    m.includes("rate limit") ||
+    m.includes("rate_limit") ||
+    m.includes("too many requests") ||
+    m.includes("quota") ||
+    m.includes("insufficient") ||
+    m.includes("balance")
   );
+}
+
+function isTransientProviderError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    isQuotaError(message) ||
+    m.includes("server_error") ||
+    m.includes("server error") ||
+    m.includes("internal error") ||
+    m.includes("internal server error") ||
+    m.includes("500") ||
+    m.includes("502") ||
+    m.includes("503") ||
+    m.includes("504") ||
+    m.includes("overloaded") ||
+    m.includes("service unavailable") ||
+    m.includes("unavailable") ||
+    m.includes("bad gateway") ||
+    m.includes("gateway timeout") ||
+    m.includes("connection error") ||
+    m.includes("connection refused") ||
+    m.includes("other side closed") ||
+    m.includes("fetch failed") ||
+    m.includes("upstream connect") ||
+    m.includes("reset before headers") ||
+    m.includes("terminated") ||
+    m.includes("econnreset") ||
+    m.includes("etimedout") ||
+    m.includes("timeout")
+  );
+}
+
+function splitModelKey(modelKey: string): { provider: string; modelId: string } | null {
+  const [provider, ...rest] = modelKey.split("/");
+  const modelId = rest.join("/");
+  if (!provider || !modelId) return null;
+  return { provider, modelId };
 }
 
 function parseFallbackModelEnv(): string[] {
@@ -220,6 +262,11 @@ export default function (pi: ExtensionAPI) {
 
   // v2: capture last compaction summary for post-compact storage
   let lastCompactionSummary: string | null = null;
+  let autoFailoverBridgeActive = false;
+
+  const piRuntime = pi as ExtensionAPI & {
+    on(event: "auto_retry_end", handler: (event: AutoRetryEndEventLike, ctx: any) => Promise<void> | void): void;
+  };
 
   // v2: helper to get session ID from context
   const getSessionId = (ctx: { sessionManager: { getSessionId(): string } }) => {
@@ -234,6 +281,81 @@ export default function (pi: ExtensionAPI) {
   const sessionIdArgs = (ctx: { sessionManager: { getSessionId(): string } }): string[] => {
     const sid = getSessionId(ctx);
     return sid ? ["--session-id", sid] : [];
+  };
+
+  /**
+   * Get eligible failover models — model-agnostic.
+   * Picks any available model from a DIFFERENT provider than the current one,
+   * skipping providers on cooldown. No hardcoded provider preferences.
+   */
+  const getEligibleFailoverModels = async (ctx: {
+    modelRegistry: {
+      find(provider: string, modelId: string): Model<any> | undefined;
+      getApiKey(model: Model<any>): Promise<string | undefined>;
+      getAvailable(): Model<any>[];
+    };
+    model: Model<any>;
+  }) => {
+    const now = Date.now();
+    const currentKey = `${ctx.model.provider}/${ctx.model.id}`;
+    const seen = new Set<string>();
+    const eligible: Model<any>[] = [];
+
+    for (const model of ctx.modelRegistry.getAvailable()) {
+      const key = `${model.provider}/${model.id}`;
+      if (key === currentKey) continue;
+      if (seen.has(key)) continue;
+
+      // Skip models on the same provider (since that provider just failed)
+      if (model.provider === ctx.model.provider) continue;
+
+      const backoffUntil = providerBackoffUntil.get(model.provider) ?? 0;
+      if (backoffUntil > now) continue;
+
+      const apiKey = await ctx.modelRegistry.getApiKey(model);
+      if (!apiKey) continue;
+
+      seen.add(key);
+      eligible.push(model);
+    }
+
+    return eligible;
+  };
+
+  const shouldBridgeRetryFailure = (errorMessage?: string) => {
+    if (!errorMessage) return false;
+    return isTransientProviderError(errorMessage);
+  };
+
+  const needsCompactionForModel = (ctx: { getContextUsage(): { tokens: number; contextWindow: number } | undefined }, model: Model<any>) => {
+    const usage = ctx.getContextUsage();
+    if (!usage || usage.tokens == null) return false;
+
+    const contextWindow = model.contextWindow ?? 0;
+    if (contextWindow <= 0) return false;
+
+    return usage.tokens / contextWindow >= compactThreshold;
+  };
+
+  const buildFailoverResumeMessage = (fromModel: Model<any>, toModel: Model<any>, failure?: string) => {
+    const failureNote = failure
+      ? `Failure on previous model: ${failure}.`
+      : `Previous model ${fromModel.provider}/${fromModel.id} failed after automatic retries.`;
+
+    if (resumableState.lastIntent) {
+      return [
+        failureNote,
+        `Continue from the current session state using ${toModel.provider}/${toModel.id}.`,
+        `Do not restart from scratch unless needed.`,
+        `Last user intent: ${resumableState.lastIntent}`,
+      ].join(" ");
+    }
+
+    return [
+      failureNote,
+      `Continue from the current session state using ${toModel.provider}/${toModel.id}.`,
+      "Do not restart from scratch unless needed.",
+    ].join(" ");
   };
 
   const clearCompactionWatchdog = () => {
@@ -336,6 +458,63 @@ export default function (pi: ExtensionAPI) {
     return { action: "continue" };
   });
 
+  // ── Final retry failure bridge: fail over to another provider ──────
+  piRuntime.on("auto_retry_end", async (event, ctx) => {
+    if (event.success) return;
+    if (autoFailoverBridgeActive) return;
+    if (!shouldBridgeRetryFailure(event.finalError)) return;
+    if (!ctx.model) return;
+
+    const candidates = await getEligibleFailoverModels(ctx);
+
+    // No other providers available — preserve default Pi behavior.
+    if (candidates.length === 0) return;
+
+    const currentModel = ctx.model;
+    providerBackoffUntil.set(currentModel.provider, Date.now() + PROVIDER_COOLDOWN_MS);
+    autoFailoverBridgeActive = true;
+
+    try {
+      for (const candidate of candidates) {
+        const switched = await pi.setModel(candidate);
+        if (!switched) continue;
+
+        resumableState.lastActivity = Date.now();
+
+        const compactFirst = needsCompactionForModel(ctx, candidate);
+        if (compactFirst) {
+          ctx.ui.notify(
+            `Provider failure after ${event.attempt} retries on ${currentModel.provider}/${currentModel.id}. ` +
+            `Switched to ${candidate.provider}/${candidate.id}; compaction will run before auto-resume if needed.`,
+            "warning"
+          );
+          return;
+        }
+
+        ctx.ui.notify(
+          `Provider failure after ${event.attempt} retries on ${currentModel.provider}/${currentModel.id}. ` +
+          `Switched to ${candidate.provider}/${candidate.id} and resuming automatically.`,
+          "warning"
+        );
+
+        try {
+          pi.sendUserMessage(buildFailoverResumeMessage(currentModel, candidate, event.finalError), { deliverAs: "followUp" });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          ctx.ui.notify(`Auto-resume after model failover could not be queued: ${message}`, "warning");
+        }
+        return;
+      }
+
+      ctx.ui.notify(
+        "Failover bridge: no configured backup model could be activated. Default failure preserved.",
+        "warning"
+      );
+    } finally {
+      autoFailoverBridgeActive = false;
+    }
+  });
+
   // ── Before compact: sync memory + custom cross-provider summary ────
   pi.on("session_before_compact", async (event, ctx) => {
     const project = getProjectKey(ctx.cwd);
@@ -375,10 +554,9 @@ export default function (pi: ExtensionAPI) {
     const preferred = parseFallbackModelEnv();
     const preferredModels = preferred
       .map((entry) => {
-        const [provider, ...rest] = entry.split("/");
-        const modelId = rest.join("/");
-        if (!provider || !modelId) return undefined;
-        return ctx.modelRegistry.find(provider, modelId);
+        const parsed = splitModelKey(entry);
+        if (!parsed) return undefined;
+        return ctx.modelRegistry.find(parsed.provider, parsed.modelId);
       })
       .filter((m): m is Model<any> => Boolean(m));
 
@@ -471,7 +649,7 @@ export default function (pi: ExtensionAPI) {
 
         failures.push(`${model.provider}/${model.id}: ${reason}`);
 
-        if (isQuotaError(message)) {
+        if (isTransientProviderError(message)) {
           providerBackoffUntil.set(model.provider, Date.now() + PROVIDER_COOLDOWN_MS);
         }
 

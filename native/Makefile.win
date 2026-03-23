@@ -1,0 +1,24 @@
+# pi-memory Windows build (MSVC — run from Developer Command Prompt)
+#
+# Usage:
+#   nmake /F Makefile.win
+#   nmake /F Makefile.win install
+
+TARGET = pi-memory.exe
+SRC = pi-memory.c sqlite3.c
+INSTALL_DIR = $(USERPROFILE)\.pi\memory
+
+CFLAGS = /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE
+
+$(TARGET): $(SRC) sqlite3.h compat.h getopt_port.h
+	cl $(CFLAGS) /Fe:$(TARGET) $(SRC)
+
+install: $(TARGET)
+	if not exist "$(INSTALL_DIR)" mkdir "$(INSTALL_DIR)"
+	copy /Y $(TARGET) "$(INSTALL_DIR)\$(TARGET)"
+	@echo installed -^> $(INSTALL_DIR)\$(TARGET)
+
+clean:
+	del /Q $(TARGET) *.obj 2>NUL
+
+.PHONY: install clean
