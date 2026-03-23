@@ -59,6 +59,7 @@ extern int optreset;
 #endif
 
 #define VERSION       "2.2.0"
+#define SCHEMA_VERSION 3
 #define MAX_PATH      2048
 #define MAX_BUF       8192
 #define MAX_JSON_VAL  65536
@@ -252,13 +253,6 @@ static sqlite3 *open_db(void) {
         return NULL;
     }
 
-    int db_exists = 0;
-    FILE *existing = fopen(path, "rb");
-    if (existing) {
-        db_exists = 1;
-        fclose(existing);
-    }
-
     sqlite3 *db = NULL;
     if (sqlite3_open(path, &db) != SQLITE_OK) {
         fprintf(stderr, "error: cannot open db at %s: %s\n", path,
@@ -283,7 +277,7 @@ static sqlite3 *open_db(void) {
     }
     int original_schema_version = schema_version;
 
-    if (schema_version < 1 && db_exists) {
+    if (schema_version < 1) {
         if (ensure_column(db, "decisions", "session_id", "ALTER TABLE decisions ADD COLUMN session_id TEXT;") != 0 ||
             ensure_column(db, "findings",  "session_id", "ALTER TABLE findings ADD COLUMN session_id TEXT;") != 0 ||
             ensure_column(db, "lessons",   "session_id", "ALTER TABLE lessons ADD COLUMN session_id TEXT;") != 0 ||
@@ -294,7 +288,7 @@ static sqlite3 *open_db(void) {
         schema_version = 1;
     }
 
-    if (schema_version < 2 && db_exists) {
+    if (schema_version < 2) {
         if (ensure_column(db, "project_state", "session_count",   "ALTER TABLE project_state ADD COLUMN session_count INTEGER DEFAULT 0;") != 0 ||
             ensure_column(db, "project_state", "total_tokens",    "ALTER TABLE project_state ADD COLUMN total_tokens INTEGER DEFAULT 0;") != 0 ||
             ensure_column(db, "project_state", "total_cost",      "ALTER TABLE project_state ADD COLUMN total_cost REAL DEFAULT 0;") != 0 ||
