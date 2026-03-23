@@ -3,6 +3,14 @@ name: Build Prebuilt Binaries
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths:
+      - "native/**"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "native/**"
+      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 permissions:
@@ -21,7 +29,7 @@ jobs:
             libs: "-lm"
             ext: ""
 
-          - os: macos-13
+          - os: macos-15-intel
             platform: darwin-x64
             cc: clang
             flags: "-Wall -Wextra -Wpedantic -O2 -std=c11"
@@ -125,3 +133,16 @@ jobs:
         with:
           name: all-prebuilds
           path: prebuilds/
+
+      - name: Commit prebuilds to repo
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add prebuilds/
+          if git diff --cached --quiet; then
+            echo "No changes to prebuilds"
+          else
+            git commit -m "chore: update prebuilt binaries [skip ci]"
+            git push
+          fi
