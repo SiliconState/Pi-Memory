@@ -29,7 +29,7 @@ jobs:
             libs: "-lm"
             ext: ""
 
-          - os: macos-13
+          - os: macos-15-intel
             platform: darwin-x64
             cc: clang
             flags: "-Wall -Wextra -Wpedantic -O2 -std=c11"
