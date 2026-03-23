@@ -30,7 +30,6 @@ const DEFAULT_FALLBACK_MODELS: string[] = [];
 
 interface ResumableState {
   lastIntent: string | null;
-  lastActivity: number;
 }
 
 interface CompactionPreparationLike {
@@ -86,29 +85,32 @@ interface ExecResultLike {
   stderr?: string;
 }
 
-function hasCommandNotFoundHint(text: string | undefined): boolean {
+function hasCommandUnavailableHint(text: string | undefined): boolean {
   if (!text) return false;
   const m = text.toLowerCase();
   return (
     m.includes("not found") ||
     m.includes("no such file") ||
-    m.includes("enoent")
+    m.includes("enoent") ||
+    m.includes("permission denied") ||
+    m.includes("access is denied") ||
+    m.includes("eacces")
   );
 }
 
-function isCommandNotFoundResult(result: ExecResultLike | undefined): boolean {
+function isCommandUnavailableResult(result: ExecResultLike | undefined): boolean {
   if (!result) return false;
-  if (result.code === 127) return true;
+  if (result.code === 127 || result.code === 126) return true;
 
   return (
-    hasCommandNotFoundHint(result.stderr) ||
-    hasCommandNotFoundHint(result.stdout)
+    hasCommandUnavailableHint(result.stderr) ||
+    hasCommandUnavailableHint(result.stdout)
   );
 }
 
 function isCommandLaunchError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  return hasCommandNotFoundHint(error.message);
+  return hasCommandUnavailableHint(error.message);
 }
 
 function getPreferredPiMemoryBin(): string | undefined {
@@ -136,7 +138,7 @@ async function execPiMemory(
   if (preferred && preferred !== "pi-memory") {
     try {
       const result = await pi.exec(preferred, args, options);
-      if (!isCommandNotFoundResult(result as ExecResultLike)) return result;
+      if (!isCommandUnavailableResult(result as ExecResultLike)) return result;
     } catch (error) {
       if (!isCommandLaunchError(error)) throw error;
     }
@@ -205,7 +207,7 @@ function parseFallbackModelEnv(): string[] {
     .filter(Boolean);
 }
 
-function withTimeoutSignal(parentSignal: AbortSignal, timeoutMs: number) {
+function withTimeoutSignal(parentSignal: AbortSignal | undefined, timeoutMs: number) {
   const controller = new AbortController();
   let timedOut = false;
 
@@ -217,10 +219,10 @@ function withTimeoutSignal(parentSignal: AbortSignal, timeoutMs: number) {
 
   const onParentAbort = () => controller.abort();
 
-  if (parentSignal.aborted) {
+  if (parentSignal?.aborted) {
     onParentAbort();
   } else {
-    parentSignal.addEventListener("abort", onParentAbort, { once: true });
+    parentSignal?.addEventListener("abort", onParentAbort, { once: true });
   }
 
   return {
@@ -228,7 +230,7 @@ function withTimeoutSignal(parentSignal: AbortSignal, timeoutMs: number) {
     timedOut: () => timedOut,
     cleanup: () => {
       clearTimeout(timeout);
-      parentSignal.removeEventListener("abort", onParentAbort);
+      parentSignal?.removeEventListener("abort", onParentAbort);
     },
   };
 }
@@ -304,7 +306,6 @@ export default function (pi: ExtensionAPI) {
   const providerBackoffUntil = new Map<string, number>();
   let resumableState: ResumableState = {
     lastIntent: null,
-    lastActivity: Date.now(),
   };
 
   // v2: capture last compaction summary for post-compact storage
@@ -501,7 +502,6 @@ export default function (pi: ExtensionAPI) {
     }
 
     resumableState.lastIntent = text;
-    resumableState.lastActivity = Date.now();
     return { action: "continue" };
   });
 
@@ -525,8 +525,6 @@ export default function (pi: ExtensionAPI) {
       for (const candidate of candidates) {
         const switched = await pi.setModel(candidate);
         if (!switched) continue;
-
-        resumableState.lastActivity = Date.now();
 
         const compactFirst = needsCompactionForModel(ctx, candidate);
         if (compactFirst) {
@@ -754,10 +752,7 @@ export default function (pi: ExtensionAPI) {
       lastCompactionSummary = null;
     }
 
-    const timeSinceActivity = Date.now() - resumableState.lastActivity;
-    const hasRecentIntent = Boolean(resumableState.lastIntent) && timeSinceActivity < 30 * 60 * 1000;
-    const shouldResume = wasAutoCompaction || hasRecentIntent;
-
+    const shouldResume = wasAutoCompaction;
     if (!shouldResume) return;
 
     const resumeMessage = resumableState.lastIntent

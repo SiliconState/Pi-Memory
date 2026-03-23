@@ -3,7 +3,7 @@ name: memory
 description: Persist and retrieve project knowledge using pi-memory (SQLite at ~/.pi/memory/memory.db). Use when you need to log an architectural decision, record a finding or lesson, check what was decided before, sync a MEMORY.md file with live DB content, bootstrap memory for a new project, or ingest a Pi session file to extract metadata, decisions, lessons, and entities. Works across all projects — project is auto-detected from git remote or cwd. All log commands accept --session-id to cross-reference entries to Pi sessions.
 ---
 
-# pi-memory v2.1 — Durable Agent Memory
+# pi-memory v2.2 — Durable Agent Memory
 
 A single compiled binary (`~/.pi/memory/pi-memory`) backed by SQLite.
 Works across every project. Survives context resets, compactions, and machine reboots.
@@ -28,6 +28,19 @@ When `--project` is omitted, the project is resolved in this order:
 **You almost never need to type `--project` when working inside a git repo.**
 
 > Note: `pi-memory state` is the exception — it requires an explicit `<project>` positional argument.
+
+## Command Quick Reference
+
+| Task | Command |
+|---|---|
+| Initialize memory file | `pi-memory init [project] [--file MEMORY.md]` |
+| Log decisions/findings/lessons/entities | `pi-memory log <type> ... [--project <proj>] [--session-id <uuid>]` |
+| Read current state | `pi-memory state <project>` |
+| Query structured records | `pi-memory query [--type decision\|finding\|lesson\|entity] [--session-id <uuid>]` |
+| Search text | `pi-memory search "keyword" [--project <proj>] [--session-id <uuid>]` |
+| Sync MEMORY.md markers | `pi-memory sync MEMORY.md [--project <proj>] [--limit 15]` |
+| Ingest a session JSONL | `pi-memory ingest-session <path.jsonl> [--project <proj>] [--dry-run]` |
+| List ingested sessions | `pi-memory sessions [--project <proj>] [--limit 50]` |
 
 ## Bootstrap a New Project
 
@@ -227,6 +240,14 @@ pi-memory search "factory" --session-id "162cf943-..."
 ```
 
 The extension automatically passes `--session-id` on all `pi-memory log` calls.
+
+## Edge Cases & Troubleshooting
+
+- **`pi-memory` not found**: use the absolute binary path `~/.pi/memory/pi-memory` (or set `PI_MEMORY_BIN`).
+- **Wrong project attribution**: pass `--project <name>` explicitly, or set `PI_MEMORY_PROJECT` for the current shell.
+- **Noisy ingest extraction**: run `ingest-session --dry-run` first, then ingest for real only if counts look reasonable.
+- **Session linking missing**: ensure `--session-id` is passed on manual `log` commands when cross-references matter.
+- **`MEMORY.md` not updating**: verify both marker pairs exist exactly (`state` and `decisions`) and rerun `pi-memory sync`.
 
 ## Automatic Behaviors (via memory-compact extension)
 
