@@ -2,25 +2,58 @@
 
 ## 2.2.0
 
-### Self-contained package — zero compiler needed
+### Cross-platform native package hardening
 
-- **prebuilt binaries** for macOS (arm64, x64), Linux (x64, arm64), and Windows (x64)
-  - `npm install` / `bun install` / `pi install git:...` just works — no C compiler required
-  - falls back to source compilation on unsupported platforms
-- **Windows support** — full cross-platform C port
-  - compat.h abstraction layer for POSIX → Windows shims
-  - bundled getopt_long implementation for MSVC
-  - Makefile.win for native MSVC builds
-  - handles USERPROFILE, _mkdir, _popen, path separators
-- **cross-platform scripts** — all JS, no bash dependency
-  - test-smoke.mjs replaces test-smoke.sh (works on Windows)
-  - doctor.mjs updated for Windows paths and .exe extension
-  - setup.mjs tries prebuilt first, compiles as fallback
-  - postinstall.mjs delegates to setup.mjs
-- **GitHub Actions CI** — builds and tests on macOS, Linux, and Windows
-  - build.yml: matrix build for all 5 platform targets on tag push
-  - ci.yml: smoke tests on all 3 OS families
-- package.json: version 2.2.0, added `prebuilds/` to files, `os` field, Node.js smoke test
+- merged the verified Windows support work into the 2.2 branch
+- Windows native support now includes:
+  - path/home-directory handling for Windows environments
+  - bundled Windows `getopt_long` compatibility
+  - MSVC / clang / gcc source-build support
+  - `Makefile.win` for native MSVC builds
+- session ingest extraction buffers moved off the stack for Windows-safe reliability
+- extension project-key resolution now honors:
+  1. `PI_MEMORY_PROJECT`
+  2. `MEMORY.md` header
+  3. working directory basename
+
+### Packaging / install
+
+- package layout is ready for `pi install`, npm, and bun installs
+- npm package fileset now excludes locally built `native/pi-memory` artifacts
+- `scripts/setup.mjs` now:
+  - prefers prebuilt binaries when present
+  - falls back to source compilation automatically
+  - uses broader Windows compiler discovery
+- `scripts/postinstall.mjs` and `scripts/doctor.mjs` now mention bun-friendly setup guidance
+- `scripts/install.sh` now delegates to the package setup flow instead of using a stale direct compile path
+- package description updated to describe prebuilds accurately
+
+### Prebuilds / release readiness
+
+- committed macOS prebuilds for:
+  - `darwin-arm64`
+  - `darwin-x64`
+- release workflow builds additional artifacts for:
+  - `linux-x64`
+  - `linux-arm64`
+  - `win32-x64`
+- documented current prebuilt reality instead of over-promising branch contents
+
+### CI / validation
+
+- smoke tests run through the cross-platform `scripts/test-smoke.mjs`
+- CI validates macOS, Linux, and Windows
+- `npm pack --dry-run` remains clean with the packaged fileset
+
+### Documentation cleanup
+
+- reconciled README, install docs, architecture docs, extension docs, and skill docs
+- removed stale “Windows unsupported” language
+- clarified that npm/bun install flow is structurally ready even though public npm publish is not live yet
+
+### Branch cleanup
+
+- removed tracked autoresearch artifacts and the legacy shell smoke script from the product branch
 
 ## 2.1.1
 
@@ -28,11 +61,9 @@
 - added setup/doctor/smoke scripts
 - bundled extension, skill, and prompts
 - documented install, architecture, extension lifecycle, and agent usage
-- clarified three-layer memory model and JSONL-vs-memory positioning
-- added manual compaction controls documentation (`/compact-threshold`, `/compact`)
 - aligned binary version output with package version (`2.1.1`)
 - fixed Linux build portability (`optreset`/`getopt` reset handling + POSIX declarations)
 - improved packaged extension binary resolution order:
-  1) `PI_MEMORY_BIN`
-  2) `~/.pi/memory/pi-memory`
-  3) `pi-memory` in PATH
+  1. `PI_MEMORY_BIN`
+  2. installed binary in the user `.pi/memory` directory
+  3. `pi-memory` in PATH

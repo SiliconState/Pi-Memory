@@ -58,13 +58,18 @@ jobs:
           ${{ matrix.cc }} ${{ matrix.flags }} -o pi-memory${{ matrix.ext }} pi-memory.c sqlite3.c ${{ matrix.libs }}
           ./pi-memory --version
 
+      - name: Enable MSVC toolchain
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
       - name: Build (Windows MSVC)
         if: runner.os == 'Windows'
         shell: cmd
         run: |
           cd native
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          cl /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /Fe:pi-memory.exe pi-memory.c sqlite3.c
+          cl /nologo /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /Fe:pi-memory.exe pi-memory.c sqlite3.c
           pi-memory.exe --version
 
       - name: Stage prebuilt

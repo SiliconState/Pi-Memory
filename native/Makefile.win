@@ -8,7 +8,7 @@ TARGET = pi-memory.exe
 SRC = pi-memory.c sqlite3.c
 INSTALL_DIR = $(USERPROFILE)\.pi\memory
 
-CFLAGS = /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE
+CFLAGS = /nologo /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE
 
 $(TARGET): $(SRC) sqlite3.h compat.h getopt_port.h
 	cl $(CFLAGS) /Fe:$(TARGET) $(SRC)

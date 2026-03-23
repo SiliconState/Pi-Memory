@@ -21,7 +21,7 @@ const result = spawnSync(process.execPath, [setupScript, "--quiet"], {
 });
 
 if (result.status === 0) {
-  console.log("[pi-memory] native binary installed in ~/.pi/memory/");
+  console.log("[pi-memory] native binary installed in the user .pi/memory directory.");
   process.exit(0);
 }
 

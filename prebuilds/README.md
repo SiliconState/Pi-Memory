@@ -1,14 +1,20 @@
 # Prebuilt binaries
 
-Layout: `prebuilds/<platform>-<arch>/pi-memory[.exe]`
+Layout:
 
-Shipped platforms:
-- `darwin-x64` — macOS Intel
-- `darwin-arm64` — macOS Apple Silicon
+```text
+prebuilds/<platform>-<arch>/pi-memory[.exe]
+```
 
-Built by CI (added on release):
-- `linux-x64`
-- `linux-arm64`
-- `win32-x64` (`.exe`)
+## Currently committed in this branch
 
-If no prebuilt exists for your platform, `scripts/setup.mjs` compiles from source automatically.
+- `darwin-arm64/pi-memory`
+- `darwin-x64/pi-memory`
+
+## Additional release/CI targets
+
+- `linux-x64/pi-memory`
+- `linux-arm64/pi-memory`
+- `win32-x64/pi-memory.exe`
+
+If a matching prebuilt is not present, `scripts/setup.mjs` compiles from source automatically.

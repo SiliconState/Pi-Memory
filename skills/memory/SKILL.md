@@ -1,21 +1,26 @@
 ---
 name: memory
-description: Persist and retrieve project knowledge using pi-memory (SQLite at ~/.pi/memory/memory.db). Use when you need to log an architectural decision, record a finding or lesson, check what was decided before, sync a MEMORY.md file with live DB content, bootstrap memory for a new project, or ingest a Pi session file to extract metadata, decisions, lessons, and entities. Works across all projects — project is auto-detected from git remote or cwd. All log commands accept --session-id to cross-reference entries to Pi sessions.
+description: Persist and retrieve project knowledge using pi-memory (SQLite at ~/.pi/memory/memory.db on macOS/Linux or %USERPROFILE%\\.pi\\memory\\memory.db on Windows). Use when you need to log an architectural decision, record a finding or lesson, check what was decided before, sync a MEMORY.md file with live DB content, bootstrap memory for a new project, or ingest a Pi session file to extract metadata, decisions, lessons, and entities. Works across all projects — project is auto-detected from env/git/repo context unless you pass --project. All log commands accept --session-id to cross-reference entries to Pi sessions.
 ---
 
 # pi-memory v2.2 — Durable Agent Memory
 
-A single compiled binary (`~/.pi/memory/pi-memory`) backed by SQLite.
+A single compiled binary backed by SQLite.
 Works across every project. Survives context resets, compactions, and machine reboots.
 
 ## Binary Location
 
 ```
-~/.pi/memory/pi-memory        (installed binary)
-~/.pi/memory/memory.db        (database)
+macOS / Linux:
+  ~/.pi/memory/pi-memory
+  ~/.pi/memory/memory.db
+
+Windows:
+  %USERPROFILE%\.pi\memory\pi-memory.exe
+  %USERPROFILE%\.pi\memory\memory.db
 ```
 
-If `pi-memory` is not in PATH, run `~/.pi/memory/pi-memory ...` directly.
+If `pi-memory` is not in PATH, run the installed binary directly or set `PI_MEMORY_BIN`.
 
 ## Project Auto-Detection
 
@@ -243,7 +248,7 @@ The extension automatically passes `--session-id` on all `pi-memory log` calls.
 
 ## Edge Cases & Troubleshooting
 
-- **`pi-memory` not found**: use the absolute binary path `~/.pi/memory/pi-memory` (or set `PI_MEMORY_BIN`).
+- **`pi-memory` not found**: use the installed absolute binary path (`~/.pi/memory/pi-memory` on macOS/Linux or `%USERPROFILE%\\.pi\\memory\\pi-memory.exe` on Windows), or set `PI_MEMORY_BIN`.
 - **Wrong project attribution**: pass `--project <name>` explicitly, or set `PI_MEMORY_PROJECT` for the current shell.
 - **Noisy ingest extraction**: run `ingest-session --dry-run` first, then ingest for real only if counts look reasonable.
 - **Session linking missing**: ensure `--session-id` is passed on manual `log` commands when cross-references matter.
@@ -275,7 +280,7 @@ The extension automatically passes `--session-id` on all `pi-memory log` calls.
 ### All log calls:
 - Automatically include `--session-id` for cross-referencing
 
-## Schema (v2.1)
+## Schema (v2.2)
 
 ### Tables:
 - `decisions` — architectural/technical choices (+ session_id)
@@ -340,11 +345,29 @@ The C source and bundled SQLite amalgamation live in the installed package direc
 
 ```bash
 cd ~/.pi/agent/git/github.com/SiliconState/Pi-Memory && npm run setup
+# or
+bun run setup
 ```
 
-Or compile directly:
+If Pi installed the package into the project-scoped package cache instead, use:
 
 ```bash
+cd ~/.pi/git/github.com/SiliconState/Pi-Memory && npm run setup
+```
+
+Direct compile examples:
+
+```bash
+# macOS
 PKG="$HOME/.pi/agent/git/github.com/SiliconState/Pi-Memory/native"
-cc -O2 -Wall -Wextra -o ~/.pi/memory/pi-memory "$PKG/pi-memory.c" "$PKG/sqlite3.c" -lpthread -ldl -lm
+cc -Wall -Wextra -Wpedantic -O2 -std=c11 -o ~/.pi/memory/pi-memory "$PKG/pi-memory.c" "$PKG/sqlite3.c" -lm
+
+# Linux
+cc -Wall -Wextra -Wpedantic -O2 -std=c11 -o ~/.pi/memory/pi-memory "$PKG/pi-memory.c" "$PKG/sqlite3.c" -lpthread -ldl -lm
+```
+
+```powershell
+# Windows (PowerShell, MSVC)
+$pkg = "$env:USERPROFILE\.pi\agent\git\github.com\SiliconState\Pi-Memory\native"
+cl /nologo /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /Fe:"$env:USERPROFILE\.pi\memory\pi-memory.exe" "$pkg\pi-memory.c" "$pkg\sqlite3.c"
 ```

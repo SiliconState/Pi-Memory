@@ -6,36 +6,37 @@ BIN="${PI_MEMORY_BIN:-$HOME/.pi/memory/pi-memory}"
 
 log() { printf '[pi-memory-install] %s\n' "$*"; }
 
-if ! command -v pi >/dev/null 2>&1; then
-  echo "pi CLI is required. Install pi first, then re-run this installer." >&2
+die() {
+  printf '%s\n' "$*" >&2
   exit 1
+}
+
+if ! command -v pi >/dev/null 2>&1; then
+  die "pi CLI is required. Install pi first, then re-run this installer."
 fi
 
 log "Installing Pi package: $REPO"
 pi install "$REPO"
 
 if [ ! -x "$BIN" ]; then
-  log "Binary not found at $BIN. Attempting local compile fallback..."
+  log "Binary not found at $BIN. Running package setup fallback..."
 
-  SRC_GLOBAL="$HOME/.pi/agent/git/github.com/SiliconState/Pi-Memory/native/pi-memory.c"
-  SRC_PROJECT="$HOME/.pi/git/github.com/SiliconState/Pi-Memory/native/pi-memory.c"
+  PKG_GLOBAL="$HOME/.pi/agent/git/github.com/SiliconState/Pi-Memory"
+  PKG_PROJECT="$HOME/.pi/git/github.com/SiliconState/Pi-Memory"
 
-  if [ -f "$SRC_GLOBAL" ]; then
-    SRC="$SRC_GLOBAL"
-  elif [ -f "$SRC_PROJECT" ]; then
-    SRC="$SRC_PROJECT"
+  if [ -d "$PKG_GLOBAL" ]; then
+    PKG="$PKG_GLOBAL"
+  elif [ -d "$PKG_PROJECT" ]; then
+    PKG="$PKG_PROJECT"
   else
-    echo "Could not locate native/pi-memory.c after install." >&2
-    echo "Expected one of:" >&2
-    echo "  $SRC_GLOBAL" >&2
-    echo "  $SRC_PROJECT" >&2
-    exit 1
+    die "Could not locate the installed Pi-Memory package directory after install."
   fi
 
-  mkdir -p "$(dirname "$BIN")"
-  CC_BIN="${CC:-cc}"
-  "$CC_BIN" -Wall -Wextra -Wpedantic -O2 -std=c11 -o "$BIN" "$SRC" -lsqlite3
-  chmod +x "$BIN"
+  SETUP_SCRIPT="$PKG/scripts/setup.mjs"
+  [ -f "$SETUP_SCRIPT" ] || die "Missing setup script: $SETUP_SCRIPT"
+  command -v node >/dev/null 2>&1 || die "Node.js is required to run the package setup fallback."
+
+  node "$SETUP_SCRIPT"
 fi
 
 log "Installed binary: $BIN"

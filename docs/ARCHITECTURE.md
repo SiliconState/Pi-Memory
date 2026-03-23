@@ -1,24 +1,35 @@
 # Architecture
 
-Pi-Memory v2 is intentionally split into three layers:
+Pi-Memory is intentionally split into three layers:
 
 1. **Core memory engine** (`native/pi-memory.c`)
 2. **Pi runtime integration** (`extensions/pi-memory-compact.ts`)
-3. **Project memory bridge** (`MEMORY.md` files synced from DB)
+3. **Project memory bridge** (`MEMORY.md`)
 
-## Core (C + SQLite)
+The design goal is simple: keep persistence tiny and predictable, and keep Pi-specific behavior at the extension boundary.
 
-The C binary is the source of truth for persistence.
+---
 
-### Storage
+## 1) Core memory engine (C + SQLite)
 
-SQLite database:
+The native binary is the source of truth.
 
+### Storage locations
+
+### macOS / Linux
 ```text
+~/.pi/memory/pi-memory
 ~/.pi/memory/memory.db
 ```
 
-Primary tables:
+### Windows
+```text
+%USERPROFILE%\.pi\memory\pi-memory.exe
+%USERPROFILE%\.pi\memory\memory.db
+```
+
+### Primary tables
+
 - `decisions`
 - `findings`
 - `lessons`
@@ -30,83 +41,121 @@ Primary tables:
 
 - `log decision|finding|lesson|entity`
 - `query` / `search` / `recent` / `projects`
-- `state <project>` (phase, summary, next actions + rollups)
-- `sync` (`MEMORY.md` marker replacement)
-- `ingest-session` (Pi JSONL -> semantic memory)
-- `sessions` (ingested session index)
-- `export` (md/json)
+- `state <project>`
+- `sync MEMORY.md`
+- `ingest-session <session.jsonl>`
+- `sessions`
+- `export --format md|json`
 
 ### Reliability choices
 
-- SQLite amalgamation bundled — no system `libsqlite3-dev` dependency
-- `sqlite3_busy_timeout` to reduce lock failures under concurrent writes
-- parameterized SQL statements for injection safety
-- idempotent session ingest
-- WAL mode + foreign keys enabled
+- bundled SQLite amalgamation — no system SQLite dependency
+- `sqlite3_busy_timeout` to reduce lock failures
+- prepared statements for all write/query paths
+- schema versioning via `PRAGMA user_version`
+- fast-path DB open on already-upgraded schemas
+- migration-only WAL enablement instead of enabling WAL on every open
+- foreign keys enabled on open
+- session ingest is idempotent
 
-## Extension (TypeScript)
+---
 
-The extension automates operational memory hygiene around compaction and shutdown.
+## 2) Extension layer (TypeScript)
+
+The extension automates memory hygiene around compaction, failover, and shutdown.
 
 ### Key hooks
 
 - `session_before_compact`
-  - syncs `MEMORY.md` best-effort
-  - can run custom compaction fallback model flow
+  - best-effort `pi-memory sync MEMORY.md`
+  - builds the compaction summary via model fallback logic
 - `session_compact`
-  - logs compaction summary as finding
-  - restores user intent after compaction
+  - stores compaction summary as a finding
+  - resumes the last user intent after auto-compaction
+- `auto_retry_end`
+  - bridges final transient provider failures to another provider/model when available
 - `turn_end`
-  - threshold monitoring + early compaction trigger
+  - monitors context usage and triggers early compaction when needed
+  - updates the status-bar context meter
 - `model_select`
-  - warns/compacts if switching to smaller context model
+  - warns or compacts when switching to a smaller context model
 - `session_shutdown`
-  - ingests session JSONL
-  - updates project state
+  - ingests the current Pi session JSONL
+  - updates `project_state`
   - syncs `MEMORY.md`
 
 ### Binary resolution
 
-The packaged extension resolves pi-memory in this order:
-1. `PI_MEMORY_BIN` env var
-2. `~/.pi/memory/pi-memory`
-3. fallback command `pi-memory` in PATH
+The extension resolves the native binary in this order:
+1. `PI_MEMORY_BIN`
+2. the default user `.pi/memory` location for the current OS
+3. `pi-memory` on PATH
 
-## MEMORY.md bridge layer
+### Project-key behavior
 
-`MEMORY.md` files are not the source of truth (SQLite is), but they are the context bridge into new sessions.
+The extension tries to keep project naming aligned with the native CLI by checking:
+1. `PI_MEMORY_PROJECT`
+2. `MEMORY.md` header (`# Memory — <project>`)
+3. current directory basename
 
-- Source of truth: `memory.db`
-- Projection: `pi-memory sync MEMORY.md`
-- Session continuity: Pi loads project files, so synced `MEMORY.md` carries curated memory into fresh sessions
+---
 
-## Session JSONL vs pi-memory
+## 3) `MEMORY.md` bridge
 
-- Session JSONL: exhaustive transcript (high volume, noisy, forensic)
-- pi-memory DB: distilled, queryable semantic memory (high signal)
+`MEMORY.md` is not the source of truth.
+The database is.
 
-They are complementary. Ingest converts relevant signal from JSONL into structured memory tables.
+`MEMORY.md` exists so a new Pi session can quickly load curated context from the working tree.
 
-## Automatic session transcript pipeline (what is actually “auto”)
+Flow:
+- database records are updated through the CLI and extension
+- `pi-memory sync MEMORY.md` projects the current state into marker blocks
+- the next session sees the synced file in the repo context
 
-| Step | What happens automatically | Component |
+Required marker pairs:
+
+```html
+<!-- pi-memory:decisions:start --> ... <!-- pi-memory:decisions:end -->
+<!-- pi-memory:state:start --> ... <!-- pi-memory:state:end -->
+```
+
+---
+
+## Session JSONL vs Pi-Memory
+
+They are complementary.
+
+| Layer | Role |
+|---|---|
+| Pi session JSONL | exhaustive transcript, auditing, replay |
+| Pi-Memory DB | distilled semantic memory, recall, continuity |
+
+### Automatic transcript pipeline
+
+| Step | What happens | Component |
 |---|---|---|
-| 1 | Pi runtime writes raw session transcript to `~/.pi/agent/sessions/.../session.jsonl` | Pi core |
-| 2 | On `session_shutdown`, extension runs `pi-memory ingest-session <session.jsonl> --project <project>` | `extensions/pi-memory-compact.ts` |
-| 3 | Ingest updates `sessions`, stores compaction summaries/findings, extracts decisions/lessons/entities, rolls up `project_state` | `native/pi-memory.c` |
-| 4 | Extension writes final state summary and runs `pi-memory sync MEMORY.md` | extension + C binary |
-| 5 | Next session starts with synced `MEMORY.md` available as project context | Pi context loading |
+| 1 | Pi writes raw session JSONL | Pi runtime |
+| 2 | shutdown hook runs `ingest-session` | extension |
+| 3 | ingest updates `sessions`, extracted memories, rollups | native CLI |
+| 4 | extension writes final state + syncs `MEMORY.md` | extension + native CLI |
+| 5 | next session loads synced repo context | Pi runtime |
 
-Important distinction: raw JSONL is **not** injected directly as prompt context; curated memory derived from it is.
+Raw JSONL is **not** the curated memory layer.
+It is the raw source that the memory system mines and summarizes.
 
-## Skill + Prompts
+---
 
-- `skills/memory/SKILL.md`: operational policy and command usage for agents
-- `prompts/*.md`: reusable workflows for sync + ingest review
+## Skill + prompts
+
+- `skills/memory/SKILL.md` — agent operating guidance
+- `prompts/memory-sync.md` — sync/review workflow
+- `prompts/memory-ingest-session.md` — ingest/review workflow
+
+---
 
 ## Design principles
 
-- Keep core memory engine tiny and predictable
-- Keep integration logic at extension boundary
-- Use local-only durability by default
-- Prefer explicit CLI contracts over hidden automation
+- keep the core memory engine small and auditable
+- keep Pi-specific workflow logic in the extension
+- prefer local durability over extra infrastructure
+- keep the install story predictable across macOS, Linux, and Windows

@@ -54,15 +54,27 @@ static inline int pi_mkdir(const char *path, int mode) {
 /* Home directory — no pwd.h on Windows */
 static inline const char *pi_get_home(void) {
     const char *home = getenv("USERPROFILE");
-    if (!home) home = getenv("HOME");       /* Git Bash / MSYS2 */
-    if (!home) home = "C:\\Users\\Default";
+    if (!home || !*home) home = getenv("HOME");       /* Git Bash / MSYS2 */
+    if ((!home || !*home)) {
+        const char *drive = getenv("HOMEDRIVE");
+        const char *path = getenv("HOMEPATH");
+        if (drive && *drive && path && *path) {
+            static char combined[1024];
+            snprintf(combined, sizeof(combined), "%s%s", drive, path);
+            return combined;
+        }
+    }
+    if (!home || !*home) home = getenv("TEMP");
+    if (!home || !*home) home = ".";
     return home;
 }
 
-/* optreset doesn't exist on Windows — our bundled getopt handles resets
-   via optind=1. Define it as a no-op to avoid #ifdef at every call site. */
-static int _pi_optreset_noop = 0;
-#define optreset _pi_optreset_noop
+static inline void pi_normalize_path(char *path) {
+    if (!path) return;
+    for (char *p = path; *p; p++) {
+        if (*p == '/') *p = '\\';
+    }
+}
 
 /* Path separator */
 #define PI_PATH_SEP '\\'
@@ -92,6 +104,10 @@ static inline const char *pi_get_home(void) {
         home = (pw && pw->pw_dir) ? pw->pw_dir : "/tmp";
     }
     return home;
+}
+
+static inline void pi_normalize_path(char *path) {
+    (void)path;
 }
 
 #define PI_PATH_SEP '/'

@@ -65,8 +65,8 @@ for (const c of checks) {
 }
 
 if (failed.length) {
-  console.log("\nRun: npm run setup");
-  console.log("from the pi-memory package directory (typically ~/.pi/agent/git/github.com/SiliconState/Pi-Memory).");
+  console.log("\nRun: npm run setup   (or: bun run setup)");
+  console.log("from the pi-memory package directory (typically ~/.pi/agent/git/github.com/SiliconState/Pi-Memory or ~/.pi/git/github.com/SiliconState/Pi-Memory).");
   process.exit(1);
 }
 

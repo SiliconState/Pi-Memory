@@ -2,34 +2,84 @@
 
 ## Versioning
 
-- Patch: bugfix/docs/packaging reliability
-- Minor: backward-compatible features
-- Major: breaking CLI or schema behavior
+- **patch** — bug fixes, packaging fixes, docs corrections
+- **minor** — backward-compatible features
+- **major** — breaking CLI/schema/behavior changes
+
+---
+
+## Pre-release checklist
+
+Run:
+
+```bash
+npm run setup
+npm run doctor
+npm run test:smoke
+npm pack --dry-run
+```
+
+Recommended additional checks:
+- verify `README.md` and `docs/INSTALL.md` match the real install story
+- verify Windows-specific changes have been validated on Windows, not only reviewed on macOS/Linux
+- confirm `prebuilds/` contents and `prebuilds/README.md` are accurate for the release branch/tag
+
+---
 
 ## Release steps
 
 1. Update `package.json` version.
 2. Update `CHANGELOG.md`.
-3. Run:
-   ```bash
-   npm run setup
-   npm run doctor
-   npm run test:smoke
-   ```
-4. Commit + tag:
+3. Commit release changes.
+4. Tag the release:
    ```bash
    git tag vX.Y.Z
    git push origin main --tags
    ```
-5. (When npm publishing is live) Publish to npm:
-   ```bash
-   npm publish --access public
-   ```
+5. Let GitHub Actions build release artifacts.
 
-> npm/bun publish is planned but not currently live. For now, users install via `pi install git:github.com/SiliconState/Pi-Memory`.
+---
 
-## Post-release checks
+## GitHub Actions workflow roles
 
-- `pi install git:github.com/SiliconState/Pi-Memory` (primary install path)
-- `~/.pi/memory/pi-memory --version`
-- verify extension hooks and ingest path in a real Pi session
+### `ci.yml`
+Runs smoke validation on:
+- macOS
+- Linux
+- Windows
+
+### `build.yml`
+Builds prebuilt release artifacts for:
+- `darwin-arm64`
+- `darwin-x64`
+- `linux-x64`
+- `linux-arm64`
+- `win32-x64`
+
+The release workflow uploads combined prebuild artifacts and attaches binaries to GitHub Releases on version tags.
+
+---
+
+## Install-path validation after release
+
+At minimum, verify:
+
+```bash
+pi install git:github.com/SiliconState/Pi-Memory
+~/.pi/memory/pi-memory --version
+npm pack --dry-run
+```
+
+And on Windows:
+
+```powershell
+$env:USERPROFILE\.pi\memory\pi-memory.exe --version
+```
+
+If npm publishing is enabled later, also validate:
+
+```bash
+npm publish --access public
+```
+
+At the moment, npm publish is still optional/future-facing; `pi install git:...` remains the primary supported user path.

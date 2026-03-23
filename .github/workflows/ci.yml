@@ -19,6 +19,12 @@ jobs:
         with:
           node-version: 20
 
+      - name: Enable MSVC toolchain
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
       - name: Build native binary
         run: npm run setup
 

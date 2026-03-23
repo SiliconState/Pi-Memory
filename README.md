@@ -1,168 +1,236 @@
 # Pi-Memory (v2)
 
-> **Pi extension** — requires the [Pi coding agent](https://github.com/badlogic/pi-mono) (`@mariozechner/pi-coding-agent`).
-> Install Pi first, then add Pi-Memory as a package.
+> **Pi package + native memory engine** for the [Pi coding agent](https://github.com/badlogic/pi-mono).
+> Install Pi first, then install Pi-Memory.
 
-Durable memory for Pi agents, built for **low-overhead reliability**:
-- **C core** (`native/pi-memory.c`) for speed + minimal runtime surface
-- **TypeScript extension** (`extensions/pi-memory-compact.ts`) for Pi lifecycle automation
-- **SQLite DB** (`~/.pi/memory/memory.db`) for single-file durability and simple ops
-- **Prebuilt binaries** — no C compiler needed on macOS, Linux, or Windows
+Pi-Memory gives Pi agents a durable local memory layer built from three small pieces:
+- a **native C CLI** for persistence and queries
+- a **Pi extension** for compaction/session lifecycle automation
+- a **`MEMORY.md` bridge** for human-readable project continuity
 
 Repository: https://github.com/SiliconState/Pi-Memory
 
 ---
 
-## Why C + SQLite
+## Why this exists
 
-Pi-Memory is intentionally small:
-- no server process
-- no external DB
-- no runtime framework dependency for core memory engine
-- one local DB: `~/.pi/memory/memory.db`
+Pi session JSONL files are excellent for forensics, but they are not optimized for fast recall.
+Pi-Memory adds a second layer:
 
-That keeps startup fast, failure modes simple, and behavior predictable.
+- **raw session JSONL** for full history
+- **structured memory** for durable decisions, findings, lessons, entities, and project state
+
+That makes long-running work easier to resume after compaction, handoff, or reboot.
 
 ---
 
-## Three-layer memory model
-
-Pi-Memory is designed as a layered system where each layer has a different job:
+## Three-layer model
 
 | Layer | Responsibility | Location |
 |---|---|---|
-| **1. Core memory engine (C + SQLite)** | Stores structured memory: decisions, findings, lessons, entities, sessions, project state | `~/.pi/memory/pi-memory` + `~/.pi/memory/memory.db` |
-| **2. Pi lifecycle extension (TypeScript)** | Hooks into compaction/session events, syncs memory, ingests sessions, resumes intent | `extensions/pi-memory-compact.ts` (installed by Pi package) |
-| **3. Project memory files (`MEMORY.md`)** | Human-readable, per-project snapshot used as context bridge across sessions | project root `MEMORY.md` with sync markers |
-
-Check current DB coverage at any time:
-
-```bash
-~/.pi/memory/pi-memory projects
-```
+| Native core | Structured persistence + query/search/export/sync | `~/.pi/memory/pi-memory` / `%USERPROFILE%\.pi\memory\pi-memory.exe` |
+| SQLite store | Durable source of truth | `~/.pi/memory/memory.db` / `%USERPROFILE%\.pi\memory\memory.db` |
+| Project bridge | Human-readable context projection | `MEMORY.md` in your project |
 
 ---
 
-## Session JSONL vs pi-memory (complementary, not redundant)
+## Platform support
 
-| Dimension | Session JSONL (`~/.pi/agent/sessions/...`) | pi-memory (`~/.pi/memory/memory.db`) |
-|---|---|---|
-| Purpose | Full forensic transcript of a session | Curated, queryable long-term memory |
-| Granularity | Every message/tool result (including noise) | Distilled signal (decision/finding/lesson/entity) |
-| Scope | Single session tree | Cross-session + cross-project |
-| Search | Raw JSONL grep/parsing | Built-in structured query/search |
-| Compaction continuity | Bound to session context rules | Explicitly synced into `MEMORY.md` and state tables |
-| Best use | Auditing/replay/debug | Fast recall + continuity + handoff |
+Pi-Memory has **native source support** for:
+- macOS
+- Linux
+- Windows
 
-Think of it as **camera footage vs engineering notebook**: you want both.
+### Current prebuilt status on this branch
 
-### How JSONL is used automatically
+| Platform | Native support | In-repo prebuilt |
+|---|---:|---:|
+| macOS arm64 | ✅ | ✅ |
+| macOS x64 | ✅ | ✅ |
+| Linux x64 | ✅ | release/CI artifact or compile fallback |
+| Linux arm64 | ✅ | release/CI artifact or compile fallback |
+| Windows x64 | ✅ | compile fallback today; prebuilt can be shipped by release workflow |
 
-| Stage | Automatic action |
-|---|---|
-| Session runtime | Pi writes raw transcript JSONL (`~/.pi/agent/sessions/.../session.jsonl`) |
-| Session shutdown | extension calls `ingest-session` + updates `state` + runs `sync MEMORY.md` |
-| Next session | Pi loads project context files; synced `MEMORY.md` carries forward curated memory |
-
-Raw JSONL is not directly loaded as prompt context; extracted signal is.
+If a matching prebuilt is absent, `scripts/setup.mjs` automatically falls back to compiling from source.
 
 ---
 
 ## Install
 
-### One-command install (recommended)
+### Recommended for Pi users
 
 ```bash
 pi install git:github.com/SiliconState/Pi-Memory
 ```
 
-This installs all Pi components declared in `package.json`:
-- extension (`extensions/pi-memory-compact.ts`)
-- skill (`skills/memory/SKILL.md`)
-- prompts (`prompts/*.md`)
-- native binary (prebuilt for your platform — no compiler needed)
+This is the primary install path because Pi reads the package metadata and installs:
+- the extension
+- the skill
+- the prompts
+- the native binary via `postinstall`
 
-### Platform support
-
-| Platform | Architecture | Prebuilt binary |
-|----------|-------------|----------------|
-| macOS    | arm64 (Apple Silicon) | ✅ |
-| macOS    | x64 (Intel) | ✅ |
-| Linux    | x64 | ✅ |
-| Linux    | arm64 | ✅ |
-| Windows  | x64 | ✅ |
-
-If no prebuilt matches your platform, install falls back to compiling from source (requires `cc`/`gcc`/`clang` or MSVC).
-
-### Alternative one-liner installer (curl)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/SiliconState/Pi-Memory/main/scripts/install.sh | bash
-```
-
-Then verify:
+Verify:
 
 ```bash
 ~/.pi/memory/pi-memory --version
 ```
 
+On Windows:
+
+```powershell
+$env:USERPROFILE\.pi\memory\pi-memory.exe --version
+```
+
+### npm / bun readiness
+
+The package structure is ready for **npm** and **bun** installs from git or a packed tarball.
+
+Examples:
+
+```bash
+npm install github:SiliconState/Pi-Memory
+bun add github:SiliconState/Pi-Memory
+```
+
+Notes:
+- `postinstall` runs `scripts/setup.mjs`
+- prebuilt binaries are used when present
+- otherwise the package compiles from source
+- **Pi users should still prefer `pi install git:...`** so Pi registers the extension/skill/prompt metadata
+- npm publish is not live yet
+
+### Unix convenience installer
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SiliconState/Pi-Memory/main/scripts/install.sh | bash
+```
+
+This helper is **Unix-only**.
+
 ---
 
-## Quick Start
+## Quick start
+
+### Binary path
+
+If `pi-memory` is not on your PATH, use one of these:
+
+- macOS / Linux: `~/.pi/memory/pi-memory`
+- Windows: `%USERPROFILE%\.pi\memory\pi-memory.exe`
+
+### Basic usage
 
 ```bash
 BIN="${PI_MEMORY_BIN:-$HOME/.pi/memory/pi-memory}"
 
-# initialize MEMORY.md markers
+# initialize project memory markers
 "$BIN" init
 
-# log memory records
-"$BIN" log decision "Use SQLite for memory" --choice "Single local DB" --rationale "Simple + durable"
-"$BIN" log finding "Extension hooks run at session_shutdown" --category architecture --confidence verified
-"$BIN" log lesson "Forgot to sync MEMORY.md" --fix "Run sync before compaction"
+# write memory
+"$BIN" log decision "Use SQLite for agent memory" \
+  --choice "Single local database" \
+  --rationale "Simple, durable, low operational overhead"
+
+"$BIN" log finding "Extension syncs MEMORY.md before compaction" \
+  --category architecture \
+  --confidence verified
+
+"$BIN" log lesson "Wrong project attribution caused noisy sync output" \
+  --fix "Pass --project explicitly when needed"
+
 "$BIN" log entity "SessionManager" --type concept --description "Pi session tree manager"
 
-# inspect
+# inspect memory
 "$BIN" query --limit 20
 "$BIN" search "compaction"
 "$BIN" state <project>
 
-# sync docs
+# project bridge
 "$BIN" sync MEMORY.md --limit 15
 ```
 
+For PowerShell, use the Windows binary path directly or set `PI_MEMORY_BIN`.
+
 ---
 
-## Manual compaction controls (per active Pi session)
+## What Pi-Memory stores
 
-Inside Pi, you can manually tune compaction behavior without changing code:
+Primary record types:
+- **decisions** — what was chosen and why
+- **findings** — facts, discoveries, compaction summaries
+- **lessons** — failures and fixes
+- **entities** — named tools, services, concepts, contracts
+- **sessions** — ingested Pi session metadata and stats
+- **project_state** — current phase, summary, next actions, rollups
+
+Session ingest and shutdown automation also carry:
+- `session_id` links across records
+- token/cost rollups
+- compaction summaries
+- auto-extracted decisions/lessons/entities from session JSONL
+
+---
+
+## Session JSONL vs Pi-Memory
+
+| Dimension | Pi session JSONL | Pi-Memory |
+|---|---|---|
+| Purpose | Complete transcript | Curated durable memory |
+| Noise level | High | Low / intentional |
+| Scope | One session | Cross-session / cross-project |
+| Best use | Replay, auditing, debugging | Recall, continuity, handoff |
+
+Think of it as:
+- **JSONL = camera footage**
+- **Pi-Memory = engineering notebook**
+
+You want both.
+
+---
+
+## Compaction / continuity behavior
+
+The extension automates continuity around compaction and shutdown:
+- syncs `MEMORY.md` before compaction
+- stores compaction summaries as findings
+- captures the latest user intent for auto-resume after auto-compactions
+- ingests the current session JSONL on shutdown
+- updates `project_state`
+- syncs `MEMORY.md` again at shutdown
+- performs provider/model failover for compaction-related resilience
+
+Inside Pi you can also use:
 
 ```text
-/compact-threshold          # show current auto-compaction threshold
-/compact-threshold 75%      # set threshold for this session runtime
-/compact-threshold 0.7      # same as 70%
-/compact-threshold reset    # restore default (60%)
-/compact                    # trigger compaction now
-```
-
-If you want this change recorded in project memory for teammates/future sessions:
-
-```bash
-~/.pi/memory/pi-memory state <project> --summary "Compaction threshold set to 75%"
-~/.pi/memory/pi-memory sync MEMORY.md --project <project> --limit 15
+/compact-threshold
+/compact-threshold 75%
+/compact-threshold reset
+/compact
 ```
 
 ---
 
-## What ships in this package
+## Development
 
-- `native/pi-memory.c` — core C CLI (SQLite-backed, cross-platform)
-- `native/compat.h` — POSIX/Windows compatibility layer
-- `prebuilds/` — prebuilt binaries for all supported platforms
-- `extensions/pi-memory-compact.ts` — Pi extension
-- `skills/memory/SKILL.md` — memory skill
-- `prompts/*.md` — reusable prompt templates
-- `scripts/setup.mjs` — install helper (prebuilt copy or source compile)
+```bash
+npm run setup
+npm run doctor
+npm run test:smoke
+npm pack --dry-run
+```
+
+### Native builds
+
+**macOS / Linux**
+```bash
+cd native && make
+```
+
+**Windows (MSVC Developer Command Prompt)**
+```cmd
+cd native
+nmake /F Makefile.win
+```
 
 ---
 
@@ -170,38 +238,10 @@ If you want this change recorded in project memory for teammates/future sessions
 
 - [Install Guide](docs/INSTALL.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [Extension Lifecycle + Hooks](docs/EXTENSION.md)
+- [Extension Lifecycle](docs/EXTENSION.md)
 - [Agent Usage Guide](docs/AGENT-USAGE.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
-
----
-
-## Development
-
-```bash
-npm run setup       # install binary (prebuilt or compile)
-npm run doctor      # check all components
-npm run test:smoke  # run full smoke test
-```
-
-### Building from source
-
-**macOS/Linux:**
-```bash
-cd native && make
-```
-
-**Windows (MSVC — from Developer Command Prompt):**
-```cmd
-cd native
-nmake /F Makefile.win
-```
-
-**Windows (MinGW):**
-```bash
-cd native && gcc -O2 -std=c11 -o pi-memory.exe pi-memory.c sqlite3.c -lm
-```
 
 ---
 

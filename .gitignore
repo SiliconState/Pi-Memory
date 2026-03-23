@@ -18,3 +18,12 @@ native/*.obj
 *.db
 *.db-shm
 *.db-wal
+
+# local research / monitoring helpers
+.research-results/
+autoresearch.config.json
+codex-usage.py
+pause-research.sh
+research-status.sh
+resume-research.sh
+watch-codex-front.sh

@@ -156,14 +156,18 @@ static const char *SCHEMA =
    ───────────────────────────────────────────────────────────────── */
 
 static void get_memory_dir(char *out, size_t size) {
-    const char *home = pi_get_home();
-    snprintf(out, size, "%s/.pi/memory", home);
+    char home[MAX_PATH];
+    snprintf(home, sizeof(home), "%s", pi_get_home());
+    pi_normalize_path(home);
+    snprintf(out, size, "%s%c.pi%cmemory", home, PI_PATH_SEP, PI_PATH_SEP);
+    pi_normalize_path(out);
 }
 
 static void get_db_path(char *out, size_t size) {
     char dir[MAX_PATH];
     get_memory_dir(dir, sizeof(dir));
-    snprintf(out, size, "%s/memory.db", dir);
+    snprintf(out, size, "%s%cmemory.db", dir, PI_PATH_SEP);
+    pi_normalize_path(out);
 }
 
 static int ensure_dir(const char *path) {
@@ -180,11 +184,19 @@ static int ensure_dir(const char *path) {
 
     char tmp[MAX_PATH];
     snprintf(tmp, sizeof(tmp), "%s", path);
+    pi_normalize_path(tmp);
     size_t len = strlen(tmp);
     if (len > 0 && (tmp[len - 1] == '/' || tmp[len - 1] == '\\'))
         tmp[len - 1] = '\0';
 
-    for (char *p = tmp + 1; *p; p++) {
+    char *start = tmp + 1;
+#ifdef _WIN32
+    if (isalpha((unsigned char)tmp[0]) && tmp[1] == ':' && PI_IS_SEP(tmp[2])) {
+        start = tmp + 3;
+    }
+#endif
+
+    for (char *p = start; *p; p++) {
         if (PI_IS_SEP(*p)) {
             char saved = *p;
             *p = '\0';
@@ -605,7 +617,7 @@ static const char *auto_project(void) {
         if (fgets(raw, sizeof(raw), fp) && raw[0]) {
             /* strip trailing newline / .git */
             size_t len = strlen(raw);
-            if (len > 0 && raw[len-1] == '\n') raw[--len] = '\0';
+            while (len > 0 && (raw[len - 1] == '\n' || raw[len - 1] == '\r')) raw[--len] = '\0';
             if (len > 4 && strcmp(raw + len - 4, ".git") == 0) raw[len-=4] = '\0';
             /* take component after last '/', '\', or ':' */
             char *p = raw + len;
@@ -639,8 +651,8 @@ static const char *auto_project(void) {
 /* getopt() keeps global state; reset before each subcommand parse. */
 static void reset_getopt_state(void) {
 #if defined(_WIN32)
-    /* Our bundled getopt resets correctly with optind=1 */
     optind = 1;
+    optreset = 1;
 #elif defined(__GLIBC__)
     /* glibc resets correctly when optind is set to 0. */
     optind = 0;
@@ -2555,17 +2567,26 @@ static int cmd_ingest_session(int argc, char *argv[]) {
     int  line_num          = 0;
 
     /* ── Semantic extraction buckets ── */
-    AutoDecision decisions[MAX_AUTO_DECISIONS];
+    AutoDecision *decisions = calloc(MAX_AUTO_DECISIONS, sizeof(AutoDecision));
     int decision_count = 0;
-    AutoLesson lessons[MAX_AUTO_LESSONS];
+    AutoLesson *lessons = calloc(MAX_AUTO_LESSONS, sizeof(AutoLesson));
     int lesson_count = 0;
-    AutoEntity entities[MAX_AUTO_ENTITIES];
+    AutoEntity *entities = calloc(MAX_AUTO_ENTITIES, sizeof(AutoEntity));
     int entity_count = 0;
     char recent_error[600] = {0};
 
+    if (!decisions || !lessons || !entities) {
+        fprintf(stderr, "error: out of memory allocating ingest buffers\n");
+        free(decisions);
+        free(lessons);
+        free(entities);
+        fclose(f);
+        return 1;
+    }
+
     /* ── Compaction summaries to store ── */
     #define MAX_COMPACTIONS 128
-    char *compaction_summaries[MAX_COMPACTIONS];
+    char *compaction_summaries[MAX_COMPACTIONS] = {0};
     int   comp_idx = 0;
 
     /* ── Parse line by line ── */
@@ -2713,6 +2734,9 @@ static int cmd_ingest_session(int argc, char *argv[]) {
     if (!session_id[0]) {
         fprintf(stderr, "error: no session header found in '%s'\n", filepath);
         for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+        free(decisions);
+        free(lessons);
+        free(entities);
         return 1;
     }
 
@@ -2734,17 +2758,26 @@ static int cmd_ingest_session(int argc, char *argv[]) {
     if (dry_run) {
         printf("\n  [DRY RUN — nothing written]\n\n");
         for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+        free(decisions);
+        free(lessons);
+        free(entities);
         return 0;
     }
 
     sqlite3 *db = open_db();
     if (!db) {
         for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+        free(decisions);
+        free(lessons);
+        free(entities);
         return 1;
     }
     if (exec_sql(db, "BEGIN IMMEDIATE;", "ingest transaction begin") != 0) {
         sqlite3_close(db);
         for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+        free(decisions);
+        free(lessons);
+        free(entities);
         return 1;
     }
 
@@ -2935,12 +2968,18 @@ static int cmd_ingest_session(int argc, char *argv[]) {
         sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
         sqlite3_close(db);
         for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+        free(decisions);
+        free(lessons);
+        free(entities);
         return 1;
     }
 
     sqlite3_close(db);
 
     for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+    free(decisions);
+    free(lessons);
+    free(entities);
 
     printf("\n  done.\n\n");
     return 0;

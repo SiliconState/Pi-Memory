@@ -1,17 +1,9 @@
 /*
  * getopt_port.h — portable getopt / getopt_long for Windows
  *
- * Based on public-domain implementations. Provides the subset of
- * POSIX getopt_long used by pi-memory:
- *   - getopt_long(argc, argv, optstring, longopts, NULL)
- *   - struct option { name, has_arg, flag, val }
- *   - optarg, optind, opterr, optopt
- *   - required_argument, no_argument
- *
- * On non-Windows platforms this header is never included — the
- * system <getopt.h> is used instead (via compat.h).
- *
- * License: public domain / MIT — use freely.
+ * Header-only implementation used by pi-memory on Windows. This keeps the
+ * native build simple while preserving the parser behavior that was verified
+ * on the dedicated Windows support branch.
  */
 
 #ifndef GETOPT_PORT_H
@@ -23,6 +15,12 @@
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#if defined(__clang__) || defined(__GNUC__)
+#define PI_GETOPT_UNUSED __attribute__((unused))
+#else
+#define PI_GETOPT_UNUSED
 #endif
 
 #ifndef no_argument
@@ -40,116 +38,170 @@ struct option {
 
 static char *optarg = NULL;
 static int   optind = 1;
-static int   opterr = 1;
-static int   optopt = '?';
+static int   PI_GETOPT_UNUSED opterr = 1;
+static int   optopt = 0;
+static int   optreset = 0;
 
-/* Internal state for scanning within an argv element */
-static const char *_pi_nextchar = NULL;
+static int _pi_short_index = 0;
+static int _pi_scan_index = 1;
+static int _pi_current_index = -1;
+static int _pi_first_nonopt = -1;
 
-static int getopt_long(int argc, char *const argv[], const char *optstring,
-                       const struct option *longopts, int *longindex)
-{
+static void _pi_reset_parser_state(void) {
+    _pi_short_index = 0;
+    _pi_scan_index = optind > 0 ? optind : 1;
+    _pi_current_index = -1;
+    _pi_first_nonopt = -1;
     optarg = NULL;
+}
 
-    if (optind >= argc || !argv[optind])
-        return -1;
-
-    /* Handle "--" end-of-options marker */
-    if (strcmp(argv[optind], "--") == 0) {
-        optind++;
-        return -1;
+static int _pi_find_short_option(const char *optstring, char c) {
+    const char *p = optstring;
+    while (*p) {
+        if (*p == c) return (int)(p - optstring);
+        p++;
     }
-
-    /* ── Long options: --name or --name=value ── */
-    if (argv[optind][0] == '-' && argv[optind][1] == '-' && longopts) {
-        const char *arg = argv[optind] + 2;
-        const char *eq  = strchr(arg, '=');
-        size_t nlen = eq ? (size_t)(eq - arg) : strlen(arg);
-
-        for (int i = 0; longopts[i].name; i++) {
-            if (strncmp(longopts[i].name, arg, nlen) == 0 &&
-                strlen(longopts[i].name) == nlen) {
-
-                if (longindex) *longindex = i;
-                optind++;
-
-                if (longopts[i].has_arg == required_argument) {
-                    if (eq) {
-                        optarg = (char *)(eq + 1);
-                    } else if (optind < argc) {
-                        optarg = argv[optind++];
-                    } else {
-                        optopt = longopts[i].val;
-                        return '?';
-                    }
-                } else if (longopts[i].has_arg == optional_argument) {
-                    if (eq) optarg = (char *)(eq + 1);
-                } else {
-                    /* no_argument — ignore any =value */
-                }
-
-                if (longopts[i].flag) {
-                    *longopts[i].flag = longopts[i].val;
-                    return 0;
-                }
-                return longopts[i].val;
-            }
-        }
-
-        /* Unknown long option */
-        optopt = 0;
-        optind++;
-        return '?';
-    }
-
-    /* ── Short options: -x or -xyz (bundled) ── */
-    if (argv[optind][0] == '-' && argv[optind][1] != '\0') {
-        if (!_pi_nextchar || !*_pi_nextchar)
-            _pi_nextchar = argv[optind] + 1;
-
-        char c = *_pi_nextchar++;
-        const char *spec = strchr(optstring, c);
-
-        if (!*_pi_nextchar) {
-            optind++;
-            _pi_nextchar = NULL;
-        }
-
-        if (!spec) {
-            optopt = c;
-            return '?';
-        }
-
-        if (spec[1] == ':') {
-            /* Option requires an argument */
-            if (_pi_nextchar && *_pi_nextchar) {
-                /* Argument is the rest of this argv element: -fvalue */
-                optarg = (char *)_pi_nextchar;
-                _pi_nextchar = NULL;
-                optind++;
-            } else if (optind < argc) {
-                optarg = argv[optind++];
-            } else {
-                optopt = c;
-                return '?';
-            }
-        }
-
-        return c;
-    }
-
-    /* Not an option — stop processing */
     return -1;
 }
 
-/* Plain getopt (no long options) — just call getopt_long with NULL longopts */
-static int getopt(int argc, char *const argv[], const char *optstring) {
+static int _pi_parse_long_option(int argc, char * const argv[], const struct option *longopts, int *longindex) {
+    char *arg = argv[_pi_current_index] + 2;
+    char *value = strchr(arg, '=');
+    size_t name_len = value ? (size_t)(value - arg) : strlen(arg);
+
+    if (value) *value++ = '\0';
+
+    for (int i = 0; longopts && longopts[i].name; i++) {
+        if (strlen(longopts[i].name) == name_len && strncmp(longopts[i].name, arg, name_len) == 0) {
+            if (longindex) *longindex = i;
+
+            if (longopts[i].has_arg == required_argument) {
+                if (value && *value) {
+                    optarg = value;
+                    _pi_scan_index = _pi_current_index + 1;
+                } else if (_pi_current_index + 1 < argc) {
+                    optarg = argv[_pi_current_index + 1];
+                    _pi_scan_index = _pi_current_index + 2;
+                } else {
+                    _pi_scan_index = _pi_current_index + 1;
+                    _pi_current_index = -1;
+                    optopt = longopts[i].val;
+                    return '?';
+                }
+            } else if (longopts[i].has_arg == optional_argument) {
+                optarg = value;
+                _pi_scan_index = _pi_current_index + 1;
+            } else {
+                if (value) {
+                    _pi_scan_index = _pi_current_index + 1;
+                    _pi_current_index = -1;
+                    optopt = longopts[i].val;
+                    return '?';
+                }
+                _pi_scan_index = _pi_current_index + 1;
+            }
+
+            _pi_current_index = -1;
+            if (longopts[i].flag) {
+                *longopts[i].flag = longopts[i].val;
+                return 0;
+            }
+            return longopts[i].val;
+        }
+    }
+
+    _pi_scan_index = _pi_current_index + 1;
+    _pi_current_index = -1;
+    return '?';
+}
+
+static int getopt_long(int argc, char * const argv[], const char *optstring,
+                       const struct option *longopts, int *longindex) {
+    optarg = NULL;
+
+    if (optreset) {
+        optreset = 0;
+        _pi_reset_parser_state();
+    }
+
+    if (optind <= 0) optind = 1;
+    if (_pi_scan_index <= 0) _pi_scan_index = optind;
+
+    while (_pi_current_index == -1) {
+        if (_pi_scan_index >= argc) {
+            optind = _pi_first_nonopt >= 0 ? _pi_first_nonopt : _pi_scan_index;
+            return -1;
+        }
+
+        char *arg = argv[_pi_scan_index];
+        if (!arg || arg[0] != '-' || arg[1] == '\0') {
+            if (_pi_first_nonopt < 0) _pi_first_nonopt = _pi_scan_index;
+            _pi_scan_index++;
+            continue;
+        }
+
+        if (strcmp(arg, "--") == 0) {
+            _pi_scan_index++;
+            optind = _pi_first_nonopt >= 0 ? _pi_first_nonopt : _pi_scan_index;
+            return -1;
+        }
+
+        _pi_current_index = _pi_scan_index;
+        if (arg[1] == '-') {
+            return _pi_parse_long_option(argc, argv, longopts, longindex);
+        }
+        _pi_short_index = 1;
+    }
+
+    char *arg = argv[_pi_current_index];
+    char c = arg[_pi_short_index++];
+    int idx = _pi_find_short_option(optstring, c);
+    if (idx < 0) {
+        if (arg[_pi_short_index] == '\0') {
+            _pi_scan_index = _pi_current_index + 1;
+            _pi_current_index = -1;
+            _pi_short_index = 0;
+        }
+        optopt = c;
+        return '?';
+    }
+
+    if (optstring[idx + 1] == ':') {
+        if (arg[_pi_short_index] != '\0') {
+            optarg = &arg[_pi_short_index];
+            _pi_scan_index = _pi_current_index + 1;
+            _pi_current_index = -1;
+            _pi_short_index = 0;
+        } else if (_pi_current_index + 1 < argc) {
+            optarg = argv[_pi_current_index + 1];
+            _pi_scan_index = _pi_current_index + 2;
+            _pi_current_index = -1;
+            _pi_short_index = 0;
+        } else {
+            _pi_scan_index = _pi_current_index + 1;
+            _pi_current_index = -1;
+            _pi_short_index = 0;
+            optopt = c;
+            return '?';
+        }
+    } else if (arg[_pi_short_index] == '\0') {
+        _pi_scan_index = _pi_current_index + 1;
+        _pi_current_index = -1;
+        _pi_short_index = 0;
+    }
+
+    return c;
+}
+
+static int PI_GETOPT_UNUSED getopt(int argc, char * const argv[], const char *optstring) {
     return getopt_long(argc, argv, optstring, NULL, NULL);
 }
 
 #ifdef __cplusplus
 }
 #endif
+
+#undef PI_GETOPT_UNUSED
 
 #endif /* _WIN32 */
 #endif /* GETOPT_PORT_H */
