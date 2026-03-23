@@ -263,9 +263,7 @@ static sqlite3 *open_db(void) {
 
     /* Set these BEFORE any writes so concurrent opens don't deadlock */
     sqlite3_busy_timeout(db, 5000);
-    if (exec_sql(db, "PRAGMA journal_mode=WAL;", "WAL mode") != 0 ||
-        exec_sql(db, "PRAGMA foreign_keys=ON;", "foreign_keys pragma") != 0 ||
-        exec_sql(db, SCHEMA, "schema init") != 0) {
+    if (exec_sql(db, "PRAGMA foreign_keys=ON;", "foreign_keys pragma") != 0) {
         sqlite3_close(db);
         return NULL;
     }
@@ -276,6 +274,16 @@ static sqlite3 *open_db(void) {
         return NULL;
     }
     int original_schema_version = schema_version;
+
+    if (schema_version < SCHEMA_VERSION && exec_sql(db, "PRAGMA journal_mode=WAL;", "WAL mode") != 0) {
+        sqlite3_close(db);
+        return NULL;
+    }
+
+    if (exec_sql(db, SCHEMA, "schema init") != 0) {
+        sqlite3_close(db);
+        return NULL;
+    }
 
     if (schema_version < 1) {
         if (ensure_column(db, "decisions", "session_id", "ALTER TABLE decisions ADD COLUMN session_id TEXT;") != 0 ||
@@ -2056,9 +2064,6 @@ static int cmd_init(int argc, char *argv[]) {
     /* seed an empty project_state row if none exists */
     sqlite3 *db = open_db();
     if (!db) return 1;
-    sqlite3_exec(db,
-        "INSERT OR IGNORE INTO project_state (project) VALUES (?)",
-        NULL, NULL, NULL);
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(db,
         "INSERT OR IGNORE INTO project_state (project) VALUES (?)",
