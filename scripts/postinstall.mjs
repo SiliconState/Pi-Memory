@@ -28,6 +28,6 @@ if (result.status === 0) {
 console.warn("[pi-memory] postinstall setup skipped/failed.");
 if (result.stderr?.trim()) console.warn(result.stderr.trim());
 console.warn("Run manually:");
-console.warn("  npm run setup");
+console.warn("  npm run setup   (or: bun run setup)");
 console.warn("from the pi-memory package directory.");
 process.exit(0); /* don't fail the install */
