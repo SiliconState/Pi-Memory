@@ -80,20 +80,66 @@ function getProjectKey(cwd: string): string {
   return path.basename(cwd);
 }
 
+interface ExecResultLike {
+  code?: number;
+  stdout?: string;
+  stderr?: string;
+}
+
+function hasCommandNotFoundHint(text: string | undefined): boolean {
+  if (!text) return false;
+  const m = text.toLowerCase();
+  return (
+    m.includes("not found") ||
+    m.includes("no such file") ||
+    m.includes("enoent")
+  );
+}
+
+function isCommandNotFoundResult(result: ExecResultLike | undefined): boolean {
+  if (!result) return false;
+  if (result.code === 127) return true;
+
+  return (
+    hasCommandNotFoundHint(result.stderr) ||
+    hasCommandNotFoundHint(result.stdout)
+  );
+}
+
+function isCommandLaunchError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return hasCommandNotFoundHint(error.message);
+}
+
+function getPreferredPiMemoryBin(): string | undefined {
+  const fromEnv = process.env.PI_MEMORY_BIN?.trim();
+  if (fromEnv) return fromEnv;
+
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home) return undefined;
+
+  return path.join(
+    home,
+    ".pi",
+    "memory",
+    process.platform === "win32" ? "pi-memory.exe" : "pi-memory"
+  );
+}
+
 async function execPiMemory(
   pi: ExtensionAPI,
   args: string[],
   options?: { timeout?: number; signal?: AbortSignal }
 ) {
-  const preferred = process.env.PI_MEMORY_BIN?.trim() || path.join(
-    process.env.HOME ?? process.env.USERPROFILE ?? "",
-    ".pi", "memory",
-    process.platform === "win32" ? "pi-memory.exe" : "pi-memory"
-  );
+  const preferred = getPreferredPiMemoryBin();
 
-  if (preferred) {
-    const result = await pi.exec(preferred, args, options);
-    if (result.code !== 127) return result;
+  if (preferred && preferred !== "pi-memory") {
+    try {
+      const result = await pi.exec(preferred, args, options);
+      if (!isCommandNotFoundResult(result as ExecResultLike)) return result;
+    } catch (error) {
+      if (!isCommandLaunchError(error)) throw error;
+    }
   }
 
   return pi.exec("pi-memory", args, options);
@@ -167,6 +213,7 @@ function withTimeoutSignal(parentSignal: AbortSignal, timeoutMs: number) {
     timedOut = true;
     controller.abort();
   }, timeoutMs);
+  timeout.unref?.();
 
   const onParentAbort = () => controller.abort();
 
@@ -734,7 +781,10 @@ export default function (pi: ExtensionAPI) {
     const usage = ctx.getContextUsage();
     if (!usage || usage.tokens == null) return;
 
-    const ratio = usage.tokens / usage.contextWindow;
+    const contextWindow = usage.contextWindow ?? 0;
+    if (contextWindow <= 0) return;
+
+    const ratio = usage.tokens / contextWindow;
     if (ratio < compactThreshold) return;
 
     compactionTriggered = true;
@@ -856,7 +906,10 @@ export default function (pi: ExtensionAPI) {
     const usage = ctx.getContextUsage();
     if (!usage || usage.tokens == null) return;
 
-    const ratio = usage.tokens / usage.contextWindow;
+    const contextWindow = usage.contextWindow ?? 0;
+    if (contextWindow <= 0) return;
+
+    const ratio = usage.tokens / contextWindow;
     if (ratio < compactThreshold) {
       if (ratio > compactThreshold - 0.10) {
         ctx.ui.notify(
@@ -914,14 +967,17 @@ export default function (pi: ExtensionAPI) {
     const usage = ctx.getContextUsage();
     if (!usage || usage.tokens == null) return;
 
-    const ratio = usage.tokens / usage.contextWindow;
+    const contextWindow = usage.contextWindow ?? 0;
+    if (contextWindow <= 0) return;
+
+    const ratio = usage.tokens / contextWindow;
     const pct = Math.round(ratio * 100);
-    const filled = Math.round(ratio * 20);
+    const filled = Math.max(0, Math.min(20, Math.round(ratio * 20)));
     const bar = "█".repeat(filled) + "░".repeat(20 - filled);
 
     ctx.ui.setStatus(
       "context-usage",
-      `ctx: ${bar} ${pct}% (${Math.round(usage.tokens / 1000)}k/${Math.round(usage.contextWindow / 1000)}k)`
+      `ctx: ${bar} ${pct}% (${Math.round(usage.tokens / 1000)}k/${Math.round(contextWindow / 1000)}k)`
     );
   });
 }
