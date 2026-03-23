@@ -180,6 +180,68 @@ static int ensure_dir(const char *path) {
     return 0;
 }
 
+static int exec_sql(sqlite3 *db, const char *sql, const char *what) {
+    char *errmsg = NULL;
+    if (sqlite3_exec(db, sql, NULL, NULL, &errmsg) == SQLITE_OK) return 0;
+    fprintf(stderr, "error: %s failed: %s\n", what, errmsg ? errmsg : sqlite3_errmsg(db));
+    sqlite3_free(errmsg);
+    return -1;
+}
+
+static int db_user_version(sqlite3 *db, int *out) {
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &stmt, NULL) != SQLITE_OK) {
+        fprintf(stderr, "error: cannot read schema version: %s\n", sqlite3_errmsg(db));
+        return -1;
+    }
+
+    int rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        *out = sqlite3_column_int(stmt, 0);
+        sqlite3_finalize(stmt);
+        return 0;
+    }
+
+    fprintf(stderr, "error: cannot read schema version: %s\n", sqlite3_errmsg(db));
+    sqlite3_finalize(stmt);
+    return -1;
+}
+
+static int set_db_user_version(sqlite3 *db, int version) {
+    char sql[64];
+    snprintf(sql, sizeof(sql), "PRAGMA user_version=%d;", version);
+    return exec_sql(db, sql, "schema version update");
+}
+
+static int table_has_column(sqlite3 *db, const char *table, const char *column) {
+    char sql[128];
+    sqlite3_stmt *stmt = NULL;
+    snprintf(sql, sizeof(sql), "PRAGMA table_info(%s);", table);
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        fprintf(stderr, "error: cannot inspect table %s: %s\n", table, sqlite3_errmsg(db));
+        return -1;
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char *name = (const char *)sqlite3_column_text(stmt, 1);
+        if (name && strcmp(name, column) == 0) {
+            sqlite3_finalize(stmt);
+            return 1;
+        }
+    }
+
+    sqlite3_finalize(stmt);
+    return 0;
+}
+
+static int ensure_column(sqlite3 *db, const char *table, const char *column, const char *sql) {
+    int has_column = table_has_column(db, table, column);
+    if (has_column < 0) return -1;
+    if (has_column) return 0;
+    return exec_sql(db, sql, column);
+}
+
 static sqlite3 *open_db(void) {
     char dir[MAX_PATH], path[MAX_PATH];
     get_memory_dir(dir, sizeof(dir));
@@ -190,45 +252,76 @@ static sqlite3 *open_db(void) {
         return NULL;
     }
 
+    int db_exists = 0;
+    FILE *existing = fopen(path, "rb");
+    if (existing) {
+        db_exists = 1;
+        fclose(existing);
+    }
+
     sqlite3 *db = NULL;
     if (sqlite3_open(path, &db) != SQLITE_OK) {
-        fprintf(stderr, "error: cannot open db at %s: %s\n", path, sqlite3_errmsg(db));
+        fprintf(stderr, "error: cannot open db at %s: %s\n", path,
+            db ? sqlite3_errmsg(db) : "sqlite3_open failed");
         sqlite3_close(db);
         return NULL;
     }
 
     /* Set these BEFORE any writes so concurrent opens don't deadlock */
     sqlite3_busy_timeout(db, 5000);
-    sqlite3_exec(db, "PRAGMA journal_mode=WAL;", NULL, NULL, NULL);
-    sqlite3_exec(db, "PRAGMA foreign_keys=ON;",  NULL, NULL, NULL);
-
-    char *errmsg = NULL;
-    if (sqlite3_exec(db, SCHEMA, NULL, NULL, &errmsg) != SQLITE_OK) {
-        fprintf(stderr, "error: schema init failed: %s\n", errmsg);
-        sqlite3_free(errmsg);
+    if (exec_sql(db, "PRAGMA journal_mode=WAL;", "WAL mode") != 0 ||
+        exec_sql(db, "PRAGMA foreign_keys=ON;", "foreign_keys pragma") != 0 ||
+        exec_sql(db, SCHEMA, "schema init") != 0) {
         sqlite3_close(db);
         return NULL;
     }
 
-    /* v2 migration: add session_id column to existing tables */
-    sqlite3_exec(db, "ALTER TABLE decisions ADD COLUMN session_id TEXT;", NULL, NULL, NULL);
-    sqlite3_exec(db, "ALTER TABLE findings  ADD COLUMN session_id TEXT;", NULL, NULL, NULL);
-    sqlite3_exec(db, "ALTER TABLE lessons   ADD COLUMN session_id TEXT;", NULL, NULL, NULL);
-    sqlite3_exec(db, "ALTER TABLE entities  ADD COLUMN session_id TEXT;", NULL, NULL, NULL);
+    int schema_version = 0;
+    if (db_user_version(db, &schema_version) != 0) {
+        sqlite3_close(db);
+        return NULL;
+    }
+    int original_schema_version = schema_version;
 
-    /* v2.1 migration: project_state session rollup columns */
-    sqlite3_exec(db, "ALTER TABLE project_state ADD COLUMN session_count INTEGER DEFAULT 0;", NULL, NULL, NULL);
-    sqlite3_exec(db, "ALTER TABLE project_state ADD COLUMN total_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
-    sqlite3_exec(db, "ALTER TABLE project_state ADD COLUMN total_cost REAL DEFAULT 0;", NULL, NULL, NULL);
-    sqlite3_exec(db, "ALTER TABLE project_state ADD COLUMN last_model TEXT;", NULL, NULL, NULL);
-    sqlite3_exec(db, "ALTER TABLE project_state ADD COLUMN last_provider TEXT;", NULL, NULL, NULL);
-    sqlite3_exec(db, "ALTER TABLE project_state ADD COLUMN last_session_id TEXT;", NULL, NULL, NULL);
+    if (schema_version < 1 && db_exists) {
+        if (ensure_column(db, "decisions", "session_id", "ALTER TABLE decisions ADD COLUMN session_id TEXT;") != 0 ||
+            ensure_column(db, "findings",  "session_id", "ALTER TABLE findings ADD COLUMN session_id TEXT;") != 0 ||
+            ensure_column(db, "lessons",   "session_id", "ALTER TABLE lessons ADD COLUMN session_id TEXT;") != 0 ||
+            ensure_column(db, "entities",  "session_id", "ALTER TABLE entities ADD COLUMN session_id TEXT;") != 0) {
+            sqlite3_close(db);
+            return NULL;
+        }
+        schema_version = 1;
+    }
 
-    /* Helpful indexes for session tracing */
-    sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_decisions_session_id ON decisions(session_id);", NULL, NULL, NULL);
-    sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_findings_session_id  ON findings(session_id);", NULL, NULL, NULL);
-    sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_lessons_session_id   ON lessons(session_id);", NULL, NULL, NULL);
-    sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_sessions_project      ON sessions(project);", NULL, NULL, NULL);
+    if (schema_version < 2 && db_exists) {
+        if (ensure_column(db, "project_state", "session_count",   "ALTER TABLE project_state ADD COLUMN session_count INTEGER DEFAULT 0;") != 0 ||
+            ensure_column(db, "project_state", "total_tokens",    "ALTER TABLE project_state ADD COLUMN total_tokens INTEGER DEFAULT 0;") != 0 ||
+            ensure_column(db, "project_state", "total_cost",      "ALTER TABLE project_state ADD COLUMN total_cost REAL DEFAULT 0;") != 0 ||
+            ensure_column(db, "project_state", "last_model",      "ALTER TABLE project_state ADD COLUMN last_model TEXT;") != 0 ||
+            ensure_column(db, "project_state", "last_provider",   "ALTER TABLE project_state ADD COLUMN last_provider TEXT;") != 0 ||
+            ensure_column(db, "project_state", "last_session_id", "ALTER TABLE project_state ADD COLUMN last_session_id TEXT;") != 0) {
+            sqlite3_close(db);
+            return NULL;
+        }
+        schema_version = 2;
+    }
+
+    if (schema_version < 3) {
+        if (exec_sql(db, "CREATE INDEX IF NOT EXISTS idx_decisions_session_id ON decisions(session_id);", "idx_decisions_session_id") != 0 ||
+            exec_sql(db, "CREATE INDEX IF NOT EXISTS idx_findings_session_id ON findings(session_id);", "idx_findings_session_id") != 0 ||
+            exec_sql(db, "CREATE INDEX IF NOT EXISTS idx_lessons_session_id ON lessons(session_id);", "idx_lessons_session_id") != 0 ||
+            exec_sql(db, "CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project);", "idx_sessions_project") != 0) {
+            sqlite3_close(db);
+            return NULL;
+        }
+        schema_version = 3;
+    }
+
+    if (original_schema_version != SCHEMA_VERSION && set_db_user_version(db, SCHEMA_VERSION) != 0) {
+        sqlite3_close(db);
+        return NULL;
+    }
 
     return db;
 }
