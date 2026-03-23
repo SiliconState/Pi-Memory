@@ -1,0 +1,4 @@
+METRIC smoke_test_pass_rate=16
+METRIC compile_warnings=0
+METRIC benchmark_time_ms=289
+METRIC code_quality_issues=0
