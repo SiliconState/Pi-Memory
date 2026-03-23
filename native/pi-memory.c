@@ -83,7 +83,8 @@ static const char *SCHEMA =
     "  alternatives TEXT,"           /* what else was considered */
     "  consequences TEXT,"           /* what this opens/closes */
     "  tags         TEXT,"
-    "  status       TEXT NOT NULL DEFAULT 'active'"  /* active | superseded */
+    "  status       TEXT NOT NULL DEFAULT 'active',"  /* active | superseded */
+    "  session_id   TEXT"
     ");"
     "CREATE TABLE IF NOT EXISTS findings ("
     "  id           INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -93,7 +94,8 @@ static const char *SCHEMA =
     "  category     TEXT,"           /* pi-capabilities, smb-pain, competitive... */
     "  content      TEXT NOT NULL,"
     "  confidence   TEXT NOT NULL DEFAULT 'assumption',"  /* verified | assumption | unverified */
-    "  tags         TEXT"
+    "  tags         TEXT,"
+    "  session_id   TEXT"
     ");"
     "CREATE TABLE IF NOT EXISTS lessons ("
     "  id           INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -102,7 +104,8 @@ static const char *SCHEMA =
     "  what_failed  TEXT NOT NULL,"
     "  why          TEXT,"
     "  fix          TEXT,"
-    "  tags         TEXT"
+    "  tags         TEXT,"
+    "  session_id   TEXT"
     ");"
     "CREATE TABLE IF NOT EXISTS project_state ("
     "  project        TEXT PRIMARY KEY,"
@@ -126,6 +129,7 @@ static const char *SCHEMA =
     "  type         TEXT,"           /* tool | service | concept | framework | person */
     "  description  TEXT,"
     "  notes        TEXT,"
+    "  session_id   TEXT,"
     "  UNIQUE(project, name)"
     ");"
     "CREATE TABLE IF NOT EXISTS sessions ("
@@ -163,6 +167,17 @@ static void get_db_path(char *out, size_t size) {
 }
 
 static int ensure_dir(const char *path) {
+    struct stat st;
+    if (stat(path, &st) == 0) {
+#ifdef _WIN32
+        if ((st.st_mode & _S_IFDIR) != 0) return 0;
+#else
+        if (S_ISDIR(st.st_mode)) return 0;
+#endif
+        errno = ENOTDIR;
+        return -1;
+    }
+
     char tmp[MAX_PATH];
     snprintf(tmp, sizeof(tmp), "%s", path);
     size_t len = strlen(tmp);
@@ -298,6 +313,20 @@ static sqlite3 *open_db(void) {
         return NULL;
     }
     int original_schema_version = schema_version;
+    int fresh_db = 0;
+
+    if (schema_version == 0) {
+        int has_decisions = table_exists(db, "decisions");
+        int has_project_state = table_exists(db, "project_state");
+        int has_sessions = table_exists(db, "sessions");
+
+        if (has_decisions < 0 || has_project_state < 0 || has_sessions < 0) {
+            sqlite3_close(db);
+            return NULL;
+        }
+
+        fresh_db = !has_decisions && !has_project_state && !has_sessions;
+    }
 
     int needs_schema_init = schema_version < SCHEMA_VERSION;
     if (!needs_schema_init) {
@@ -321,6 +350,10 @@ static sqlite3 *open_db(void) {
     if (needs_schema_init && exec_sql(db, SCHEMA, "schema init") != 0) {
         sqlite3_close(db);
         return NULL;
+    }
+
+    if (fresh_db) {
+        schema_version = 2;
     }
 
     if (schema_version < 1) {
