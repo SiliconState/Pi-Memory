@@ -1,0 +1,2 @@
+- Set `autoresearch.config.json` with an isolated `workingDir` (separate git worktree) to eliminate cross-agent branch mutation noise and make keep/discard decisions trustworthy.
+- Add lightweight TypeScript extension checks to `autoresearch.sh` (e.g., `node --check` for extension files or project-specific ts diagnostics) so ecosystem/extension robustness work is directly measured, not just native C metrics.
