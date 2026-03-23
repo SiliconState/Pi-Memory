@@ -236,6 +236,30 @@ static int table_has_column(sqlite3 *db, const char *table, const char *column) 
     return 0;
 }
 
+static int table_exists(sqlite3 *db, const char *table) {
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(
+            db,
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1 LIMIT 1;",
+            -1,
+            &stmt,
+            NULL) != SQLITE_OK) {
+        fprintf(stderr, "error: cannot inspect sqlite_master for table %s: %s\n", table, sqlite3_errmsg(db));
+        return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, table, -1, SQLITE_STATIC);
+
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc == SQLITE_ROW) return 1;
+    if (rc == SQLITE_DONE) return 0;
+
+    fprintf(stderr, "error: cannot inspect sqlite_master for table %s: %s\n", table, sqlite3_errmsg(db));
+    return -1;
+}
+
 static int ensure_column(sqlite3 *db, const char *table, const char *column, const char *sql) {
     int has_column = table_has_column(db, table, column);
     if (has_column < 0) return -1;
