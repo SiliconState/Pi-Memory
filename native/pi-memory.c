@@ -275,12 +275,26 @@ static sqlite3 *open_db(void) {
     }
     int original_schema_version = schema_version;
 
-    if (schema_version < SCHEMA_VERSION && exec_sql(db, "PRAGMA journal_mode=WAL;", "WAL mode") != 0) {
+    int needs_schema_init = schema_version < SCHEMA_VERSION;
+    if (!needs_schema_init) {
+        int has_decisions = table_exists(db, "decisions");
+        int has_project_state = table_exists(db, "project_state");
+        int has_sessions = table_exists(db, "sessions");
+
+        if (has_decisions < 0 || has_project_state < 0 || has_sessions < 0) {
+            sqlite3_close(db);
+            return NULL;
+        }
+
+        needs_schema_init = !has_decisions || !has_project_state || !has_sessions;
+    }
+
+    if (needs_schema_init && exec_sql(db, "PRAGMA journal_mode=WAL;", "WAL mode") != 0) {
         sqlite3_close(db);
         return NULL;
     }
 
-    if (exec_sql(db, SCHEMA, "schema init") != 0) {
+    if (needs_schema_init && exec_sql(db, SCHEMA, "schema init") != 0) {
         sqlite3_close(db);
         return NULL;
     }
@@ -2671,6 +2685,11 @@ static int cmd_ingest_session(int argc, char *argv[]) {
         for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
         return 1;
     }
+    if (exec_sql(db, "BEGIN IMMEDIATE;", "ingest transaction begin") != 0) {
+        sqlite3_close(db);
+        for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+        return 1;
+    }
 
     int inserted_decisions = 0;
     int inserted_lessons = 0;
@@ -2854,6 +2873,13 @@ static int cmd_ingest_session(int argc, char *argv[]) {
     printf("  + auto decisions:       %d inserted\n", inserted_decisions);
     printf("  + auto lessons:         %d inserted\n", inserted_lessons);
     printf("  + auto entities:        %d upserted\n", upserted_entities);
+
+    if (exec_sql(db, "COMMIT;", "ingest transaction commit") != 0) {
+        sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
+        sqlite3_close(db);
+        for (int i = 0; i < comp_idx; i++) free(compaction_summaries[i]);
+        return 1;
+    }
 
     sqlite3_close(db);
 
